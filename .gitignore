@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ignore service account key
+
+# this is a secret, do not commit
+serviceAccountKey.json
