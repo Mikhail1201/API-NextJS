@@ -79,7 +79,7 @@ export default function LogsPage() {
       <button
         onClick={() => router.push('/')}
         className="absolute top-4 left-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
-        aria-label="Go back to homepage"
+        aria-label="Volver al inicio"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -87,23 +87,23 @@ export default function LogsPage() {
       </button>
 
       <div className="text-center text-white z-10 animate-fadeInDown">
-        <h1 className="text-3xl sm:text-4xl font-bold">Logs</h1>
-        <p className="text-white/80 text-sm">All recent system actions</p>
+        <h1 className="text-3xl sm:text-4xl font-bold">Registros</h1>
+        <p className="text-white/80 text-sm">Todas las acciones recientes del sistema</p>
       </div>
 
-      <div className="flex flex-wrap gap-4 z-10 w-full max-w-4xl justify-start mt-6 mb-2">
+      <div className="flex flex-wrap gap-4 z-10 w-full max-w-4xl justify-center mt-6 mb-2">
         <button
           onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
           className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition"
         >
-          Sort by Date: {sortOrder === 'asc' ? 'Oldest' : 'Newest'}
+          Ordenar por Fecha: {sortOrder === 'asc' ? 'Más antiguos' : 'Más recientes'}
         </button>
         <select
           value={selectedUser}
           onChange={e => setSelectedUser(e.target.value)}
           className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
         >
-          <option value="all">All Users</option>
+          <option value="all">Todos los Usuarios</option>
           {uniqueUsers.map(user => (
             <option key={user} value={user}>{user}</option>
           ))}
@@ -113,7 +113,7 @@ export default function LogsPage() {
           onChange={e => setSelectedAction(e.target.value)}
           className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
         >
-          <option value="all">All Actions</option>
+          <option value="all">Todas las Acciones</option>
           {uniqueActions.map(action => (
             <option key={action} value={action}>{action}</option>
           ))}
@@ -125,10 +125,10 @@ export default function LogsPage() {
           <table className="w-full table-auto border-collapse">
             <thead>
               <tr className="bg-gray-100 text-gray-700 text-sm">
-                <th className="px-2 py-1 text-left">Performed By</th>
-                <th className="px-2 py-1 text-left">Action</th>
-                <th className="px-2 py-1 text-left">Description</th>
-                <th className="px-2 py-1 text-left">Timestamp</th>
+                <th className="px-2 py-1 text-left">Usuario</th>
+                <th className="px-2 py-1 text-left">Acción</th>
+                <th className="px-2 py-1 text-left">Descripción</th>
+                <th className="px-2 py-1 text-left">Fecha y Hora</th>
               </tr>
             </thead>
             <tbody>
@@ -139,7 +139,7 @@ export default function LogsPage() {
                   <td className="px-2 py-1">{log.details}</td>
                   <td className="px-2 py-1">
                     {log.timestamp?.seconds
-                      ? new Date(log.timestamp.seconds * 1000).toLocaleString()
+                      ? new Date(log.timestamp.seconds * 1000).toLocaleString('es-CO')
                       : '-'}
                   </td>
                 </tr>
@@ -155,7 +155,7 @@ export default function LogsPage() {
               onClick={() => setCurrentPage(currentPage - 1)}
               className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
             >
-              Previous
+              Anterior
             </button>
 
             {Array.from({ length: totalPages }, (_, i) => i + 1)
@@ -190,7 +190,7 @@ export default function LogsPage() {
               onClick={() => setCurrentPage(currentPage + 1)}
               className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
             >
-              Next
+              Siguiente
             </button>
 
             <button
@@ -198,7 +198,7 @@ export default function LogsPage() {
               onClick={() => setCurrentPage(totalPages)}
               className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
             >
-              Last
+              Última
             </button>
           </div>
         )}
