@@ -10,6 +10,7 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [remember, setRemember] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [showError, setShowError] = useState(false);
 
     const [signInWithEmailAndPassword, user, loading, error] = useSignInWithEmailAndPassword(auth);
     const router = useRouter();
@@ -26,11 +27,11 @@ export default function Login() {
                 router.push('/');
             } else {
                 // Login failed (invalid credentials)
-                alert('Invalid email or password.');
+                setShowError(true);
             }
         } catch (error) {
             console.error('Login failed:', error);
-            alert('Login failed. Please try again.');
+            setShowError(true);
         }
     };
 
@@ -46,11 +47,14 @@ export default function Login() {
             {/* Login Box */}
             <div className="z-10 w-full max-w-sm bg-white rounded-2xl shadow-xl p-8">
                 <div className="text-center mb-6">
-                    <div className="mx-auto w-[60px] h-[60px] rounded-full bg-blue-100 flex items-center justify-center text-3xl text-blue-500 mb-2">
-                        <FaLock />
-                    </div>
-                    <h1 className="text-xl font-bold text-gray-800">Welcome</h1>
-                    <p className="text-sm text-gray-500">Sign in to access your account</p>
+                    <img
+                        src="Logo.jpeg"
+                        alt="CAM Soluciones S.A.S. Logo"
+                        className="mx-auto mb-2 w-32 h-32 object-contain"
+                        draggable={false}
+                    />
+                    <h1 className="text-xl font-bold text-gray-800">Bienvenido</h1>
+                    <p className="text-sm text-gray-500">Inicie sesión para acceder a su cuenta</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -72,7 +76,7 @@ export default function Login() {
                         <FaLock className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400" />
                         <input
                             type={showPassword ? 'text' : 'password'}
-                            placeholder="Password"
+                            placeholder="Contraseña"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
@@ -81,7 +85,7 @@ export default function Login() {
                         <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-500"
+                            className="cursor-pointer absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-500"
                         >
                             {showPassword ? <FaEyeSlash /> : <FaEye />}
                         </button>
@@ -95,16 +99,32 @@ export default function Login() {
                             onChange={(e) => setRemember(e.target.checked)}
                             className="mr-2 accent-blue-500"
                         />
-                        Remember me
+                        Recuérdame
                     </label>
 
                     {/* Submit */}
                     <button
                         type="submit"
-                        className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-md transition-all"
+                        className="cursor-pointer w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-md transition-all"
                     >
-                        Login to Account
+                        Acceder
                     </button>
+
+                    {/* Error Message */}
+                    {showError && (
+                        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+                            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-xs text-center">
+                                <h2 className="text-lg font-bold mb-2 text-red-600">Login Failed</h2>
+                                <p className="mb-4 text-gray-800">Invalid email or password.</p>
+                                <button
+                                    onClick={() => setShowError(false)}
+                                    className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Footer */}
                     <div className="pt-4 border-t text-center text-xs text-gray-500">

@@ -80,16 +80,6 @@ export default function CreateUserPage() {
     });
   };
 
-  const logAction = async (action: string, details: string) => {
-    const db = getFirestore();
-    await addDoc(collection(db, 'logs'), {
-      action,
-      details,
-      timestamp: serverTimestamp(),
-      performedBy: user?.email || user?.uid || 'unknown',
-    });
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formMode === 'create') {
@@ -126,12 +116,6 @@ export default function CreateUserPage() {
           return;
         }
 
-        // Log the action
-        await logAction(
-          'create',
-          `Created user '${formData.name}' with role '${formData.role}'`
-        );
-
         // Show success div with fade-in and auto-disappear
         const successDiv = document.createElement('div');
         successDiv.className =
@@ -140,7 +124,7 @@ export default function CreateUserPage() {
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
           </svg>
-          <span>User created successfully!</span>
+          <span>¡Usuario creado exitosamente!</span>
         `;
         document.body.appendChild(successDiv);
         setTimeout(() => successDiv.classList.add('opacity-100'), 10);
@@ -197,14 +181,6 @@ export default function CreateUserPage() {
         const updatedUser = allUsers.find(u => u.id === selectedUserId);
         const userIdentifier = updatedUser?.name || updatedUser?.email || selectedUserId;
 
-        // Log the action
-        await logAction(
-          'update',
-          updateField === 'password'
-            ? `Changed password for user '${userIdentifier}'`
-            : `Updated user '${userIdentifier}': ${updateField} = '${updateValue}'`
-        );
-
         // Show success
         const successDiv = document.createElement('div');
         successDiv.className =
@@ -213,7 +189,11 @@ export default function CreateUserPage() {
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
           </svg>
-          <span>${updateField === 'password' ? 'Password changed successfully!' : 'User updated successfully!'}</span>
+          <span>${
+            updateField === 'password'
+              ? '¡Contraseña cambiada exitosamente!'
+              : '¡Usuario actualizado exitosamente!'
+          }</span>
         `;
         document.body.appendChild(successDiv);
         setTimeout(() => successDiv.classList.add('opacity-100'), 10);
@@ -247,7 +227,7 @@ export default function CreateUserPage() {
       <button
         onClick={() => router.push('/')}
         className="absolute top-4 left-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
-        aria-label="Go back to homepage"
+        aria-label="Volver al inicio"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -265,7 +245,7 @@ export default function CreateUserPage() {
               formMode === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
-            Create
+            Crear
           </button>
           <button
             type="button"
@@ -274,17 +254,19 @@ export default function CreateUserPage() {
               formMode === 'update' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
-            Update
+            Actualizar
           </button>
         </div>
 
         {/* Title */}
         <div className="text-center mb-4">
           <h1 className="text-2xl font-bold text-gray-800 flex items-center justify-center gap-2">
-            <FaUserPlus className="text-[#f1c40f]" /> {formMode === 'create' ? 'Create New User' : 'Update User'}
+            <FaUserPlus className="text-[#f1c40f]" /> {formMode === 'create' ? 'Crear Nuevo Usuario' : 'Actualizar Usuario'}
           </h1>
           <p className="text-gray-500 text-sm">
-            Fill out the form to {formMode === 'create' ? 'add' : 'update'} a user
+            {formMode === 'create'
+              ? 'Complete el formulario para agregar un usuario'
+              : 'Complete el formulario para actualizar un usuario'}
           </p>
         </div>
 
@@ -293,35 +275,35 @@ export default function CreateUserPage() {
           {formMode === 'create' ? (
             <>
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nombre completo</label>
                 <input
                   id="name"
                   type="text"
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  placeholder="John Doe"
+                  placeholder="Juan Pérez"
                   className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
                   required
                 />
               </div>
 
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Correo electrónico</label>
                 <input
                   id="email"
                   type="email"
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  placeholder="john@example.com"
+                  placeholder="juan@ejemplo.com"
                   className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
                   required
                 />
               </div>
 
               <div className="relative">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
@@ -342,7 +324,7 @@ export default function CreateUserPage() {
               </div>
 
               <div>
-                <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
                 <select
                   id="role"
                   name="role"
@@ -351,9 +333,9 @@ export default function CreateUserPage() {
                   className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
                   required
                 >
-                  <option value="" disabled>Select a role</option>
-                  <option value="admin">Admin</option>
-                  <option value="employee">Employee</option>
+                  <option value="" disabled>Seleccione un rol</option>
+                  <option value="admin">Administrador</option>
+                  <option value="employee">Empleado</option>
                 </select>
               </div>
             </>
@@ -364,16 +346,16 @@ export default function CreateUserPage() {
                 <>
                   {/* User Selector - exclude current user */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Select User</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Seleccione usuario</label>
                     <select
                       value={selectedUserId}
                       onChange={e => setSelectedUserId(e.target.value)}
                       className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
                       required
                     >
-                      <option value="" disabled>Select a user</option>
+                      <option value="" disabled>Seleccione un usuario</option>
                       {allUsers
-                        .filter(u => u.id !== user?.uid && u.role !== 'superadmin') // Exclude current user and superadmin
+                        .filter(u => u.id !== user?.uid && u.role !== 'superadmin')
                         .map(u => (
                           <option key={u.id} value={u.id}>
                             {u.name || u.email || u.id}
@@ -383,24 +365,24 @@ export default function CreateUserPage() {
                   </div>
                   {/* Field Selector - only name and role */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Field to Update</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Campo a actualizar</label>
                     <select
                       value={updateField}
                       onChange={e => setUpdateField(e.target.value as any)}
                       className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
                       required
                     >
-                      <option value="name">Name</option>
-                      <option value="role">Role</option>
-                      <option value="password">Password</option>
+                      <option value="name">Nombre</option>
+                      <option value="role">Rol</option>
+                      <option value="password">Contraseña</option>
                     </select>
                   </div>
                   {/* Value Input */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {updateField === 'name' && 'New Name'}
-                      {updateField === 'role' && 'New Role'}
-                      {updateField === 'password' && 'New Password'}
+                      {updateField === 'name' && 'Nuevo nombre'}
+                      {updateField === 'role' && 'Nuevo rol'}
+                      {updateField === 'password' && 'Nueva contraseña'}
                     </label>
                     {updateField === 'role' ? (
                       <select
@@ -409,9 +391,9 @@ export default function CreateUserPage() {
                         className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
                         required
                       >
-                        <option value="" disabled>Select a role</option>
-                        <option value="admin">Admin</option>
-                        <option value="employee">Employee</option>
+                        <option value="" disabled>Seleccione un rol</option>
+                        <option value="admin">Administrador</option>
+                        <option value="employee">Empleado</option>
                       </select>
                     ) : (
                       <input
@@ -432,7 +414,7 @@ export default function CreateUserPage() {
             type="submit"
             className="cursor-pointer w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200"
           >
-            {formMode === 'create' ? 'Create User' : 'Update User'}
+            {formMode === 'create' ? 'Crear usuario' : 'Actualizar usuario'}
           </button>
         </form>
       </div>

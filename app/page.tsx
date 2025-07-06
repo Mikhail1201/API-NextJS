@@ -105,21 +105,21 @@ export default function Homepage() {
   const topButtons = [
     {
       icon: <FaSearch />,
-      label: 'Search and Edit',
+      label: 'Buscar y Editar',
       baseColor: 'text-[#3498db]',
       hoverColor: 'group-hover:text-[#2980b9]',
       onClick: handleGoToReports,
     },
     {
       icon: <FaPlus />,
-      label: 'Create',
+      label: 'Crear',
       baseColor: 'text-[#2ecc71]',
       hoverColor: 'group-hover:text-[#27ae60]',
       onClick: handleCreateReport,
     },
     {
       icon: <FaTrash />,
-      label: 'Delete',
+      label: 'Eliminar',
       baseColor: 'text-[#e74c3c]',
       hoverColor: 'group-hover:text-[#e74c3c]',
       onClick: handleDeleteReport, // <-- updated here
@@ -129,14 +129,14 @@ export default function Homepage() {
   const bottomButtons = [
     {
       icon: <FaUserEdit />,
-      label: 'Add/Update User',
+      label: 'Añadir/Actualizar Usuario',
       baseColor: 'text-[#f1c40f]',
       hoverColor: 'group-hover:text-[#f39c12]',
       onClick: handleAddUpdateUser,
     },
     {
       icon: <FaUserMinus />,
-      label: 'Delete User',
+      label: 'Eliminar Usuario',
       baseColor: 'text-[#9b59b6]',
       hoverColor: 'group-hover:text-[#9b59b6]',
       onClick: handleDeleteUser,
@@ -147,6 +147,18 @@ export default function Homepage() {
 
   return (
     <div className="relative min-h-screen flex flex-col items-center bg-gradient-to-br from-[#1a0a2e] via-[#0d324d] to-[#1d2671] p-4 overflow-visible">
+      {/* Logo in top-left corner */}
+      <div className="fixed top-4 left-4 z-30">
+        <div className="w-20 h-20 rounded-full bg-white shadow-lg flex items-center justify-center overflow-hidden">
+          <img
+            src="Logo.jpeg"
+            alt="CAM Soluciones S.A.S. Logo"
+            className="w-20 h-20 object-contain scale-125 transition-transform duration-300"
+            draggable={false}
+            style={{ border: 'none' }}
+          />
+        </div>
+      </div>
       {/* Decorative Background */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute rounded-full bg-white/10 w-[12vw] h-[12vw] top-[10%] left-[10%] animate-[float_20s_linear_infinite]" />
@@ -157,10 +169,10 @@ export default function Homepage() {
       {/* Header */}
       <div className="text-center my-6 z-10 animate-fadeInDown">
         <h1 className="text-[2.2rem] text-white font-bold mb-2 drop-shadow-md">
-          Main Actions
+          Acciones principales
         </h1>
         <p className="text-white/80 text-sm max-w-[480px] mx-auto">
-          Choose what you want to do
+          Elige lo que deseas hacer
         </p>
       </div>
 

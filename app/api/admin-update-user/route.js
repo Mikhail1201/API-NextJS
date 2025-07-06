@@ -57,6 +57,22 @@ export async function POST(req) {
       await db.collection('users').doc(uid).update(userDocData);
     }
 
+    // After updating user and/or Firestore doc
+    let logDetails = '';
+    if (password) {
+      logDetails = `Contraseña cambiada para el usuario '${uid}'`;
+    } else if (name || role) {
+      logDetails = `Usuario '${uid}' actualizado: ${name ? `nombre = '${name}'` : ''}${name && role ? ', ' : ''}${role ? `rol = '${role}'` : ''}`;
+    }
+    if (logDetails) {
+      await db.collection('logs').add({
+        action: 'actualizar',
+        details: logDetails,
+        timestamp: new Date(),
+        performedBy: adminDoc.data().email || adminUid,
+      });
+    }
+
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 400 });

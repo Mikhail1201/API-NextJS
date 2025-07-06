@@ -54,6 +54,14 @@ export async function POST(req) {
       createdAt: new Date(),
     });
 
+    // Log the action in Spanish
+    await db.collection('logs').add({
+      action: 'crear',
+      details: `Usuario '${name}' creado con rol '${role}'`,
+      timestamp: new Date(),
+      performedBy: adminDoc.data().email || adminUid,
+    });
+
     return new Response(JSON.stringify({ success: true, uid: userRecord.uid }), { status: 200 });
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 400 });
