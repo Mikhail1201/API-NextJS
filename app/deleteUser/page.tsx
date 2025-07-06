@@ -16,6 +16,8 @@ export default function DeleteUserPage() {
   const [user, loading] = useAuthState(auth);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [showError, setShowError] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const db = getFirestore();
 
   useEffect(() => {
@@ -57,7 +59,8 @@ export default function DeleteUserPage() {
 
     const result = await response.json();
     if (!result.success) {
-      alert('Failed to delete user: ' + result.error);
+      setErrorMsg('No se pudo eliminar el usuario: ' + result.error);
+      setShowError(true);
       return;
     }
 
@@ -79,7 +82,7 @@ export default function DeleteUserPage() {
       <button
         onClick={() => router.push('/')}
         className="absolute top-4 left-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
-        aria-label="Go back to homepage"
+        aria-label="Volver al inicio"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -87,7 +90,7 @@ export default function DeleteUserPage() {
       </button>
 
       <div className="z-10 bg-white w-full max-w-md p-6 rounded-2xl shadow-xl">
-        <h1 className="text-2xl font-bold text-center mb-4 text-gray-800">Delete User</h1>
+        <h1 className="text-2xl font-bold text-center mb-4 text-gray-800">Eliminar Usuario</h1>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -96,7 +99,7 @@ export default function DeleteUserPage() {
           className="space-y-4"
         >
           <div>
-            <label htmlFor="userSelect" className="block text-sm font-medium text-gray-700 mb-1">Select User</label>
+            <label htmlFor="userSelect" className="block text-sm font-medium text-gray-700 mb-1">Seleccione usuario</label>
             <select
               id="userSelect"
               value={selectedUserId}
@@ -104,7 +107,7 @@ export default function DeleteUserPage() {
               className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
               required
             >
-              <option value="" disabled>Select a user</option>
+              <option value="" disabled>Seleccione un usuario</option>
               {filteredUsers.map(u => (
                 <option key={u.id} value={u.id}>{u.name || u.email}</option>
               ))}
@@ -114,7 +117,7 @@ export default function DeleteUserPage() {
             type="submit"
             className="cursor-pointer w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded-lg transition duration-200"
           >
-            Delete User
+            Eliminar Usuario
           </button>
         </form>
       </div>
@@ -123,16 +126,16 @@ export default function DeleteUserPage() {
       {showConfirm && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
           <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm">
-            <h2 className="text-lg font-semibold mb-2 text-black">Confirm Deletion</h2>
+            <h2 className="text-lg font-semibold mb-2 text-black">Confirmar Eliminación</h2>
             <p className="text-sm text-gray-700 mb-4">
-              Are you sure you want to delete this user?
+              ¿Está seguro que desea eliminar este usuario?
             </p>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Confirm your password
+              Confirme su contraseña
             </label>
             <input
               type="password"
-              placeholder="Enter your password"
+              placeholder="Ingrese su contraseña"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               className="w-full p-2 mb-2 border border-gray-300 rounded text-black"
@@ -149,14 +152,14 @@ export default function DeleteUserPage() {
                 }}
                 className="cursor-pointer px-4 py-2 rounded bg-gray-300 hover:bg-gray-400 text-gray-800 transition"
               >
-                Cancel
+                Cancelar
               </button>
               <button
                 onClick={async () => {
                   setPasswordError('');
                   // Re-authenticate the admin
                   if (!user || !user.email) {
-                    setPasswordError('User not authenticated or missing email.');
+                    setPasswordError('Usuario no autenticado o falta el correo.');
                     return;
                   }
                   try {
@@ -169,12 +172,12 @@ export default function DeleteUserPage() {
                     setShowConfirm(false);
                     handleDelete();
                   } catch (err) {
-                    setPasswordError('Incorrect password. Please try again.');
+                    setPasswordError('Contraseña incorrecta. Inténtelo de nuevo.');
                   }
                 }}
                 className="cursor-pointer px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white font-semibold transition"
               >
-                Confirm
+                Confirmar
               </button>
             </div>
           </div>
@@ -187,7 +190,23 @@ export default function DeleteUserPage() {
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z" />
           </svg>
-          <span>User deleted successfully!</span>
+          <span>¡Usuario eliminado exitosamente!</span>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {showError && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
+          <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-xs text-center">
+            <h2 className="text-lg font-bold mb-2 text-red-600">Error</h2>
+            <p className="mb-4 text-gray-800">{errorMsg}</p>
+            <button
+              onClick={() => setShowError(false)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
       )}
 
