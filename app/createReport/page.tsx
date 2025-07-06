@@ -94,7 +94,7 @@ export default function CreateReportPage() {
     });
     const result = await response.json();
     if (result.success) {
-      showSuccessDiv('Report created successfully!');
+      showSuccessDiv('¡Reporte creado exitosamente!');
       // Optionally reset form
       setFormData({
         request: '',
@@ -130,34 +130,34 @@ export default function CreateReportPage() {
             onClick={() => setFormMode('report')}
             className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold transition ${formMode === 'report' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
           >
-            Create Report
+            Crear Reporte
           </button>
           <button
             type="button"
             onClick={() => setFormMode('pointofsell')}
             className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold transition ${formMode === 'pointofsell' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
           >
-            Add Point of Sell
+            Agregar Punto de Venta
           </button>
         </div>
 
         {formMode === 'report' && (
           <>
             <div className="text-center mb-4">
-              <h1 className="text-2xl font-bold text-gray-800">Create Report</h1>
+              <h1 className="text-2xl font-bold text-gray-800">Crear Reporte</h1>
             </div>
 
             <form className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm" onSubmit={handleSubmit}>
               {Object.entries({
-                "Request": "request",
-                "Number": "number",
-                "Report Date": "reportdate",
-                "Description": "description",
-                "Point of Sell": "pointofsell",
-                "Quotation": "quotation",
-                "Delivery Certificate": "deliverycertificate",
-                "State": "state",
-                "Bill": "bill"
+                "Solicitud": "request",
+                "Número": "number",
+                "Fecha de Reporte": "reportdate",
+                "Descripción": "description",
+                "Punto de Venta": "pointofsell",
+                "Cotización": "quotation",
+                "Certificado de Entrega": "deliverycertificate",
+                "Estado": "state",
+                "Factura": "bill"
               } as Record<string, FormField>).map(([label, field]) => (
                 <div key={label} className="flex flex-col">
                   <label className="text-gray-700 mb-1 text-sm font-medium">{label}</label>
@@ -171,7 +171,7 @@ export default function CreateReportPage() {
                     >
                       <option value="En Programación">En Programación</option>
                       <option value="En Espera Aprobación">En Espera Aprobación</option>
-                      <option value="pndte cotización">pndte cotización</option>
+                      <option value="pndte cotización">Pendiente de Cotización</option>
                       <option value="En Ejecución">En Ejecución</option>
                       <option value="Ejecutado">Ejecutado</option>
                       <option value="N/A">N/A</option>
@@ -184,7 +184,7 @@ export default function CreateReportPage() {
                       onChange={handleChange}
                       required
                     >
-                      <option value="">Select a point of sell</option>
+                      <option value="">Seleccione un punto de venta</option>
                       {pointsOfSell.map((pos) => (
                         <option key={pos.id} value={pos.name}>
                           {pos.name}
@@ -198,7 +198,7 @@ export default function CreateReportPage() {
                         className="p-2 pr-10 rounded-md border border-gray-300 text-sm text-black resize-none"
                         value={formData.description}
                         onChange={handleChange}
-                        placeholder="Enter description"
+                        placeholder="Ingrese la descripción"
                         rows={1}
                       />
                       <input
@@ -216,7 +216,7 @@ export default function CreateReportPage() {
                         htmlFor="file-upload"
                         className="absolute right-2 top-2 cursor-pointer flex items-center"
                         style={{ lineHeight: 0 }}
-                        title="Attach File"
+                        title="Adjuntar archivo"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 hover:text-blue-700 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l7.071-7.071a4 4 0 00-5.657-5.657l-7.071 7.071a6 6 0 108.485 8.485l6.364-6.364" />
@@ -249,7 +249,7 @@ export default function CreateReportPage() {
                   type="submit"
                   className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
                 >
-                  Create Report
+                  Crear Reporte
                 </button>
               </div>
             </form>
@@ -264,7 +264,7 @@ export default function CreateReportPage() {
       <button
         onClick={() => router.push('/')}
         className="absolute top-4 left-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
-        aria-label="Go back to homepage"
+        aria-label="Volver al inicio"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -307,11 +307,11 @@ function AddPointOfSellForm() {
     setError('');
     try {
       if (!name.trim()) {
-        setError('Name is required');
+        setError('El nombre es obligatorio');
         return;
       }
       if (!auth.currentUser) {
-        setError('Not authenticated');
+        setError('No autenticado');
         return;
       }
       const idToken = await auth.currentUser.getIdToken();
@@ -325,36 +325,36 @@ function AddPointOfSellForm() {
       });
       const result = await response.json();
       if (!result.success) {
-        setError(result.error || 'Failed to add point of sell');
+        setError(result.error || 'No se pudo agregar el punto de venta');
         return;
       }
-      showSuccessDiv('Point of sell added successfully!');
+      showSuccessDiv('¡Punto de venta agregado exitosamente!');
       setName('');
     } catch (err) {
-      setError('Failed to add point of sell');
+      setError('No se pudo agregar el punto de venta');
     }
   };
 
   return (
     <form onSubmit={handleAdd} className="flex flex-col items-center gap-3">
-      <label className="text-gray-700 text-sm font-medium mb-1">Point of Sell Name</label>
+      <label className="text-gray-700 text-sm font-medium mb-1">Nombre del Punto de Venta</label>
       <input
         type="text"
         value={name}
         onChange={e => setName(e.target.value.toUpperCase())}
         className="p-2 rounded-md border border-gray-300 text-sm text-black w-64 uppercase"
-        placeholder="Enter point of sell name"
+        placeholder="Ingrese el nombre del punto de venta"
         required
       />
       <button
         type="submit"
         className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
       >
-        Add Point of Sell
+        Agregar Punto de Venta
       </button>
+      {error && <span className="text-red-600 text-sm">{error}</span>}
     </form>
   );
-
 }
 
 function showSuccessDiv(message: string) {

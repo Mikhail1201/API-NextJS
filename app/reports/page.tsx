@@ -99,24 +99,26 @@ export default function ReportsPage() {
       </button>
 
       <div className="text-center text-white z-10 animate-fadeInDown">
-        <h1 className="text-3xl sm:text-4xl font-bold">Reports</h1>
-        <p className="text-white/80 text-sm">All submitted reports</p>
+        <h1 className="text-3xl sm:text-4xl font-bold">Reportes</h1>
+        <p className="text-white/80 text-sm">Todos los reportes</p>
       </div>
 
       <div className="flex flex-wrap gap-4 z-10 w-full max-w-6xl justify-start mt-6 mb-2">
         <button
           onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-          className="cursor-pointer bg-blue-600 text-white w-[180px] py-2 rounded-lg font-semibold transition text-center"
+          className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold transition text-center h-auto"
+          style={{ height: 'auto', minHeight: 'unset' }}
         >
-          Sort by Date: {sortOrder === 'asc' ? 'Oldest' : 'Newest'}
+          Ordenar por Fecha: {sortOrder === 'asc' ? 'Más antiguos' : 'Más recientes'}
         </button>
 
         <select
           value={selectedPoint}
           onChange={e => setSelectedPoint(e.target.value)}
-          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
+          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none h-auto"
+          style={{ height: 'auto', minHeight: 'unset' }}
         >
-          <option value="all">All Points of Sell</option>
+          <option value="all">Todos los Puntos de Venta</option>
           {uniquePoints.map(point => (
             <option key={point} value={point}>{point}</option>
           ))}
@@ -125,9 +127,10 @@ export default function ReportsPage() {
         <select
           value={selectedState}
           onChange={e => setSelectedState(e.target.value)}
-          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
+          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none h-auto"
+          style={{ height: 'auto', minHeight: 'unset' }}
         >
-          <option value="all">All States</option>
+          <option value="all">Todos los Estados</option>
           {uniqueStates.map(state => (
             <option key={state} value={state}>{state}</option>
           ))}
@@ -139,15 +142,15 @@ export default function ReportsPage() {
           <table className="w-full table-auto border-collapse text-sm text-gray-800">
             <thead className="bg-gray-100 text-gray-700">
               <tr>
-                <th className="px-2 py-1 text-left">Request</th>
-                <th className="px-2 py-1 text-left">Number</th>
-                <th className="px-2 py-1 text-left">Report Date</th>
-                <th className="px-2 py-1 text-left">Description</th>
-                <th className="px-2 py-1 text-left">Point of Sell</th>
-                <th className="px-2 py-1 text-left">Quotation</th>
-                <th className="px-2 py-1 text-left">Delivery Certificate</th>
-                <th className="px-2 py-1 text-left">State</th>
-                <th className="px-2 py-1 text-left">Bill</th>
+                <th className="px-2 py-1 text-center">Solicitud</th>
+                <th className="px-2 py-1 text-center">Número</th>
+                <th className="px-2 py-1 text-center">Fecha de Reporte</th>
+                <th className="px-2 py-1 text-center">Descripción</th>
+                <th className="px-2 py-1 text-center">Punto de Venta</th>
+                <th className="px-2 py-1 text-center">Cotización</th>
+                <th className="px-2 py-1 text-center">Certificado de Entrega</th>
+                <th className="px-2 py-1 text-center">Estado</th>
+                <th className="px-2 py-1 text-center">Factura</th>
               </tr>
             </thead>
             <tbody>
@@ -183,7 +186,7 @@ export default function ReportsPage() {
               onClick={() => setCurrentPage(currentPage - 1)}
               className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
             >
-              Previous
+              Anterior
             </button>
 
             {Array.from({ length: totalPages }, (_, i) => i + 1)
@@ -217,7 +220,7 @@ export default function ReportsPage() {
               onClick={() => setCurrentPage(currentPage + 1)}
               className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
             >
-              Next
+              Siguiente
             </button>
 
             <button
@@ -225,7 +228,7 @@ export default function ReportsPage() {
               onClick={() => setCurrentPage(totalPages)}
               className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
             >
-              Last
+              Última
             </button>
           </div>
         )}
@@ -234,34 +237,34 @@ export default function ReportsPage() {
       {showModal && selectedReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
-            <h2 className="text-xl font-semibold mb-4 text-black">Report Details</h2>
+            <h2 className="text-xl font-semibold mb-4 text-black">Detalles del Reporte</h2>
             <div className="grid grid-cols-2 gap-4 text-black">
               <div>
-                <strong>Request:</strong> {selectedReport.request || '-'}
+                <strong>Solicitud:</strong> {selectedReport.request || '-'}
               </div>
               <div>
-                <strong>Number:</strong> {selectedReport.number || '-'}
+                <strong>Número:</strong> {selectedReport.number || '-'}
               </div>
               <div>
-                <strong>Report Date:</strong> {selectedReport.reportdate || '-'}
+                <strong>Fecha de Reporte:</strong> {selectedReport.reportdate || '-'}
               </div>
               <div>
-                <strong>Description:</strong> {selectedReport.description || '-'}
+                <strong>Descripción:</strong> {selectedReport.description || '-'}
               </div>
               <div>
-                <strong>Point of Sell:</strong> {selectedReport.pointofsell || '-'}
+                <strong>Punto de Venta:</strong> {selectedReport.pointofsell || '-'}
               </div>
               <div>
-                <strong>Quotation:</strong> {selectedReport.quotation || '-'}
+                <strong>Cotización:</strong> {selectedReport.quotation || '-'}
               </div>
               <div>
-                <strong>Delivery Certificate:</strong> {selectedReport.deliverycertificate || '-'}
+                <strong>Certificado de Entrega:</strong> {selectedReport.deliverycertificate || '-'}
               </div>
               <div>
-                <strong>State:</strong> {selectedReport.state || '-'}
+                <strong>Estado:</strong> {selectedReport.state || '-'}
               </div>
               <div>
-                <strong>Bill:</strong> {selectedReport.bill || '-'}
+                <strong>Factura:</strong> {selectedReport.bill || '-'}
               </div>
             </div>
 
@@ -270,7 +273,7 @@ export default function ReportsPage() {
                 onClick={() => setShowModal(false)}
                 className="cursor-pointer px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition text-black"
               >
-                Close
+                Cerrar
               </button>
             </div>
           </div>
@@ -280,10 +283,10 @@ export default function ReportsPage() {
       {showModal && selectedReport && editReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
-            <h2 className="text-xl font-semibold mb-4 text-black">Edit Report</h2>
+            <h2 className="text-xl font-semibold mb-4 text-black">Editar Reporte</h2>
             <div className="grid grid-cols-2 gap-4 text-black">
               <div>
-                <strong>Request:</strong>
+                <strong>Solicitud:</strong>
                 <input
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.request || ''}
@@ -291,7 +294,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div>
-                <strong>Number:</strong>
+                <strong>Número:</strong>
                 <input
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.number || ''}
@@ -299,7 +302,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div>
-                <strong>Report Date:</strong>
+                <strong>Fecha de Reporte:</strong>
                 <input
                   type="date"
                   className="w-full border rounded p-1 mt-1"
@@ -308,7 +311,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div className="col-span-2">
-                <strong>Description:</strong>
+                <strong>Descripción:</strong>
                 <textarea
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.description || ''}
@@ -316,7 +319,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div>
-                <strong>Point of Sell:</strong>
+                <strong>Punto de Venta:</strong>
                 <input
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.pointofsell || ''}
@@ -324,7 +327,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div>
-                <strong>Quotation:</strong>
+                <strong>Cotización:</strong>
                 <input
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.quotation || ''}
@@ -332,7 +335,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div>
-                <strong>Delivery Certificate:</strong>
+                <strong>Certificado de Entrega:</strong>
                 <input
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.deliverycertificate || ''}
@@ -340,7 +343,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div>
-                <strong>State:</strong>
+                <strong>Estado:</strong>
                 <input
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.state || ''}
@@ -348,7 +351,7 @@ export default function ReportsPage() {
                 />
               </div>
               <div>
-                <strong>Bill:</strong>
+                <strong>Factura:</strong>
                 <input
                   className="w-full border rounded p-1 mt-1"
                   value={editReport.bill || ''}
@@ -361,7 +364,7 @@ export default function ReportsPage() {
                 onClick={() => setShowModal(false)}
                 className="cursor-pointer px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition text-black"
               >
-                Cancel
+                Cancelar
               </button>
               <button
                 onClick={async () => {
@@ -386,7 +389,7 @@ export default function ReportsPage() {
       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
       </svg>
-      <span>Report updated successfully! Refreshing in <span id="countdown">${seconds}</span>...</span>
+      <span>¡Reporte actualizado exitosamente! Actualizando en <span id="countdown">${seconds}</span>...</span>
     `;
                     document.body.appendChild(successDiv);
                     setTimeout(() => successDiv.classList.add('opacity-100'), 10);
@@ -409,7 +412,7 @@ export default function ReportsPage() {
                 }}
                 className="cursor-pointer px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 transition text-white"
               >
-                Save
+                Guardar
               </button>
             </div>
           </div>
