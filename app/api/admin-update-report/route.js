@@ -20,11 +20,11 @@ export async function POST(req) {
 
     // Consistent log entry
     await db.collection('logs').add({
-      action: 'update_report',
-      details: `Updated report with ID '${id}'`,
+      action: 'actualizar_reporte',
+      details: `Reporte actualizado con ID '${id}'`,
       reportId: id,
       updatedFields: fields,
-      performedBy: userEmail || userId || 'unknown',
+      performedBy: userEmail || userId || 'desconocido',
       timestamp: FieldValue.serverTimestamp(),
     });
 

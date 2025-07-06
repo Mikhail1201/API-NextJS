@@ -19,12 +19,12 @@ export async function POST(req) {
     const db = getFirestore();
     await db.collection('reports').doc(reportId).delete();
 
-    // Log the deletion
+    // Log the deletion en español
     await db.collection('logs').add({
-      action: 'delete_report',
-      details: `Deleted report with ID '${reportId}'`,
+      action: 'eliminar_reporte',
+      details: `Reporte eliminado con ID '${reportId}'`,
       reportId,
-      performedBy: userEmail || userId || 'unknown',
+      performedBy: userEmail || userId || 'desconocido',
       timestamp: FieldValue.serverTimestamp(),
     });
 

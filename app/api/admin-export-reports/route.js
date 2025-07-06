@@ -35,14 +35,14 @@ export async function POST(req) {
       }
     });
 
-    // Log the export action
+    // Log the export action en español
     await db.collection('logs').add({
-      action: 'export_reports',
-      details: `Exported ${filtered.length} report(s) ${onlyThatDay ? 'on' : 'until'} ${selectedDate}`,
+      action: 'exportar_reportes',
+      details: `Exportados ${filtered.length} reporte(s) ${onlyThatDay ? 'en' : 'hasta'} ${selectedDate}`,
       exportedCount: filtered.length,
       exportedDate: selectedDate,
       onlyThatDay: !!onlyThatDay,
-      performedBy: userEmail || userId || 'unknown',
+      performedBy: userEmail || userId || 'desconocido',
       timestamp: FieldValue.serverTimestamp(),
     });
 

@@ -47,7 +47,7 @@ export default function UserDropdown() {
   if (loading || !user) return null;
 
   return (
-    <div ref={dropdownRef} className="absolute top-4 right-4 z-10">
+    <div ref={dropdownRef} className="fixed top-4 right-4 z-[99999]">
       <div
         onClick={() => setDropdownOpen((prev) => !prev)}
         className="flex items-center bg-white/90 rounded-full px-3 py-2 shadow-md cursor-pointer transition-all hover:bg-white"
@@ -66,9 +66,9 @@ export default function UserDropdown() {
       </div>
 
       {dropdownOpen && (
-        <div className="absolute top-[50px] right-0 bg-white rounded-lg shadow-2xl w-40 z-50 opacity-100 transition-all">
+        <div className="absolute top-[50px] right-0 bg-white rounded-lg shadow-2xl w-40 z-[99999] opacity-100 transition-all">
           {/* Import - only for admin and superadmin */}
-          {(userRole === 'admin' || userRole === 'superadmin') && (
+          {/* {(userRole === 'admin' || userRole === 'superadmin') && (
             <div
               onClick={() => {
                 setDropdownOpen(false);
@@ -76,9 +76,9 @@ export default function UserDropdown() {
               }}
               className="flex items-center px-4 py-3 text-sm text-gray-800 hover:bg-green-50 hover:text-green-600 cursor-pointer border-b border-gray-100"
             >
-              <span className="mr-2">⬆️</span> Import
+              <span className="mr-2">⬆️</span> Importar
             </div>
-          )}
+          )} */}
           {/* Export - for everyone with a role */}
           {userRole && (
             <div
@@ -88,7 +88,7 @@ export default function UserDropdown() {
               }}
               className="flex items-center px-4 py-3 text-sm text-gray-800 hover:bg-purple-50 hover:text-purple-600 cursor-pointer border-b border-gray-100"
             >
-              <span className="mr-2">⬇️</span> Export
+              <span className="mr-2">⬇️</span> Exportar
             </div>
           )}
           {/* Logs - only for superadmin */}
@@ -100,7 +100,7 @@ export default function UserDropdown() {
               }}
               className="flex items-center px-4 py-3 text-sm text-gray-800 hover:bg-yellow-50 hover:text-yellow-600 cursor-pointer border-b border-gray-100"
             >
-              <span className="mr-2">📝</span> Logs
+              <span className="mr-2">📝</span> Registros
             </div>
           )}
           <div
@@ -111,7 +111,7 @@ export default function UserDropdown() {
             }}
             className="flex items-center px-4 py-3 text-sm text-gray-800 hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
           >
-            <FaSignOutAlt className="mr-2 w-4" /> Sign Out
+            <FaSignOutAlt className="mr-2 w-4" /> Salir
           </div>
         </div>
       )}

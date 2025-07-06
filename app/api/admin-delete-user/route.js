@@ -40,10 +40,10 @@ export async function POST(req) {
     // Delete from Firestore
     await db.collection('users').doc(uid).delete();
 
-    // Log the action
+    // Log the action en español
     await db.collection('logs').add({
-      action: 'delete',
-      details: `Deleted user '${name || email}' (role: ${role})`,
+      action: 'eliminar_usuario',
+      details: `Usuario '${name || email}' (rol: ${role}) eliminado`,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       performedBy: adminDoc.data().email || adminUid,
     });

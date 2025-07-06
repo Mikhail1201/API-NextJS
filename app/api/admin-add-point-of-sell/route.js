@@ -38,10 +38,10 @@ export async function POST(req) {
       createdAt: new Date(),
     });
 
-    // Log the action
+    // Log the action in Spanish
     await db.collection('logs').add({
-      action: 'add_point_of_sell',
-      details: `Added point of sell '${name.trim()}'`,
+      action: 'agregar_punto_de_venta',
+      details: `Punto de venta '${name.trim()}' agregado`,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       performedBy: adminEmail || adminUid,
     });

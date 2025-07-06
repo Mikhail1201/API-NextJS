@@ -39,10 +39,10 @@ export async function POST(req) {
       createdBy: userEmail,
     });
 
-    // Log the action
+    // Log the action en español
     await db.collection('logs').add({
-      action: 'create_report',
-      details: `Created report with ID '${reportRef.id}'`,
+      action: 'crear_reporte',
+      details: `Reporte creado con ID '${reportRef.id}'`,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       performedBy: userEmail,
     });
