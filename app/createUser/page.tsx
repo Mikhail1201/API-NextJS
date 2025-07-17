@@ -3,11 +3,19 @@
 import { notFound } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { FaUserPlus, FaEye, FaEyeSlash } from 'react-icons/fa';
-import { useAuthState, useCreateUserWithEmailAndPassword } from 'react-firebase-hooks/auth';
+import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '@/app/firebase/config';
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { updatePassword, updateProfile, signInWithEmailAndPassword } from 'firebase/auth';
+
+type UserRole = 'admin' | 'superadmin' | 'employee';
+
+interface UserData {
+  id: string;
+  name?: string;
+  email?: string;
+  role?: UserRole;
+}
 
 export default function CreateUserPage() {
   const [formData, setFormData] = useState({
@@ -18,16 +26,14 @@ export default function CreateUserPage() {
   });
   const [formMode, setFormMode] = useState<'create' | 'update'>('create');
   const [showPassword, setShowPassword] = useState(false);
-  const [createUserWithEmailAndPassword] = useCreateUserWithEmailAndPassword(auth);
   const router = useRouter();
   const [user, loading] = useAuthState(auth);
 
-  // New state for update mode
-  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<UserData[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [updateField, setUpdateField] = useState<'name' | 'password' | 'role'>('name');
   const [updateValue, setUpdateValue] = useState('');
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   // Fetch all users for update selector
   useEffect(() => {
@@ -35,7 +41,7 @@ export default function CreateUserPage() {
       const fetchUsers = async () => {
         const db = getFirestore();
         const usersSnap = await getDocs(collection(db, 'users'));
-        setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setAllUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData)));
       };
       fetchUsers();
     }
@@ -135,9 +141,8 @@ export default function CreateUserPage() {
 
         setFormData({ name: '', email: '', password: '', role: '' });
 
-      } catch (err) {
+      } catch {
         alert('Failed to create user. Please try again.');
-        console.error('Error creating user:', err);
       }
     } else {
       // UPDATE MODE
@@ -157,7 +162,7 @@ export default function CreateUserPage() {
         const idToken = await auth.currentUser.getIdToken();
 
         // Prepare update payload
-        const payload: any = { uid: selectedUserId };
+        const payload: { uid: string; name?: string; role?: string; password?: string } = { uid: selectedUserId };
         if (updateField === 'name') payload.name = updateValue;
         if (updateField === 'role') payload.role = updateValue;
         if (updateField === 'password') payload.password = updateValue;
@@ -176,10 +181,6 @@ export default function CreateUserPage() {
           alert('Failed to update user: ' + result.error);
           return;
         }
-
-        // Fetch the updated user's data for logging
-        const updatedUser = allUsers.find(u => u.id === selectedUserId);
-        const userIdentifier = updatedUser?.name || updatedUser?.email || selectedUserId;
 
         // Show success
         const successDiv = document.createElement('div');
@@ -205,9 +206,8 @@ export default function CreateUserPage() {
         setUpdateValue('');
         setSelectedUserId('');
         setUpdateField('name');
-      } catch (err) {
+      } catch {
         alert('Failed to update user. Please try again.');
-        console.error('Error updating user:', err);
       }
     }
   };
@@ -368,7 +368,7 @@ export default function CreateUserPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Campo a actualizar</label>
                     <select
                       value={updateField}
-                      onChange={e => setUpdateField(e.target.value as any)}
+                      onChange={e => setUpdateField(e.target.value as 'name' | 'role' | 'password')}
                       className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
                       required
                     >

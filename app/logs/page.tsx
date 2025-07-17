@@ -6,9 +6,19 @@ import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firesto
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 
+// Define a type for your log data
+interface Log {
+  id: string;
+  performedBy?: string;
+  action?: string;
+  details?: string;
+  timestamp?: { seconds: number };
+  [key: string]: unknown;
+}
+
 export default function LogsPage() {
   const router = useRouter();
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<Log[]>([]);
   const [user, loading] = useAuthState(auth);
   const [roleChecked, setRoleChecked] = useState(false);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -29,7 +39,7 @@ export default function LogsPage() {
       }
       setRoleChecked(true);
       const logsSnapshot = await getDocs(collection(db, 'logs'));
-      const logsList = logsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const logsList = logsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Log));
       setLogs(logsList);
     };
     if (!loading && user) {
@@ -70,7 +80,7 @@ export default function LogsPage() {
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(1);
-  }, [filteredLogs, totalPages]);
+  }, [filteredLogs, totalPages, currentPage]);
 
   if (loading || !roleChecked) return null;
 
@@ -105,7 +115,7 @@ export default function LogsPage() {
         >
           <option value="all">Todos los Usuarios</option>
           {uniqueUsers.map(user => (
-            <option key={user} value={user}>{user}</option>
+            <option key={user as string} value={user as string}>{user as string}</option>
           ))}
         </select>
         <select
@@ -115,7 +125,7 @@ export default function LogsPage() {
         >
           <option value="all">Todas las Acciones</option>
           {uniqueActions.map(action => (
-            <option key={action} value={action}>{action}</option>
+            <option key={action as string} value={action as string}>{action as string}</option>
           ))}
         </select>
       </div>

@@ -18,12 +18,14 @@ type FormField =
   | 'state'
   | 'bill';
 
+interface PointOfSell {
+  id: string;
+  name: string;
+}
+
 export default function CreateReportPage() {
   const [user, loading] = useAuthState(auth);
-  const [userRole, setUserRole] = useState('');
-  const [formData, setFormData] = useState<{
-    [K in FormField]: string;
-  }>({
+  const [formData, setFormData] = useState<Record<FormField, string>>({
     request: '',
     number: '',
     reportdate: new Date().toISOString().split('T')[0],
@@ -35,7 +37,7 @@ export default function CreateReportPage() {
     bill: '',
   });
   const [formMode, setFormMode] = useState<'report' | 'pointofsell'>('report');
-  const [pointsOfSell, setPointsOfSell] = useState<{ id: string; name: string }[]>([]);
+  const [pointsOfSell, setPointsOfSell] = useState<PointOfSell[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const router = useRouter();
 
@@ -51,7 +53,6 @@ export default function CreateReportPage() {
         const db = getFirestore();
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         const data = userDoc.exists() ? userDoc.data() : {};
-        setUserRole(data.role || '');
         if (!data.role) {
           await signOut(auth);
           router.push('/login');
@@ -95,7 +96,6 @@ export default function CreateReportPage() {
     const result = await response.json();
     if (result.success) {
       showSuccessDiv('¡Reporte creado exitosamente!');
-      // Optionally reset form
       setFormData({
         request: '',
         number: '',
@@ -298,9 +298,8 @@ export default function CreateReportPage() {
 
 function AddPointOfSellForm() {
   const [name, setName] = useState('');
-  const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const db = getFirestore();
+  // const db = getFirestore();
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -330,7 +329,7 @@ function AddPointOfSellForm() {
       }
       showSuccessDiv('¡Punto de venta agregado exitosamente!');
       setName('');
-    } catch (err) {
+    } catch {
       setError('No se pudo agregar el punto de venta');
     }
   };

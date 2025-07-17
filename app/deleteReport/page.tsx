@@ -7,9 +7,17 @@ import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
+// Define a type for your report data
+interface Report {
+  id: string;
+  request?: string;
+  number?: string;
+  [key: string]: unknown;
+}
+
 export default function DeleteReportPage() {
   const router = useRouter();
-  const [reports, setReports] = useState<any[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [selectedReportId, setSelectedReportId] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -38,7 +46,7 @@ export default function DeleteReportPage() {
   useEffect(() => {
     const fetchReports = async () => {
       const snapshot = await getDocs(collection(db, 'reports'));
-      const reportList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const reportList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
       setReports(reportList);
     };
     if (!loading && user && roleChecked) fetchReports();
@@ -159,7 +167,7 @@ export default function DeleteReportPage() {
                     await signInWithEmailAndPassword(auth, user.email, confirmPassword);
                     setConfirmPassword('');
                     handleDelete();
-                  } catch (err) {
+                  } catch {
                     setPasswordError('Contraseña incorrecta. Inténtelo de nuevo.');
                   }
                 }}

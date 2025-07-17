@@ -2,14 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getFirestore, collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
+// Define a type for your user data
+interface UserData {
+  id: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  [key: string]: unknown;
+}
+
 export default function DeleteUserPage() {
   const router = useRouter();
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserData[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -23,7 +32,7 @@ export default function DeleteUserPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       const snapshot = await getDocs(collection(db, 'users'));
-      const userList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const userList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
       setUsers(userList);
     };
     if (!loading && user) fetchUsers();
@@ -163,7 +172,7 @@ export default function DeleteUserPage() {
                     return;
                   }
                   try {
-                    const userCred = await signInWithEmailAndPassword(
+                    await signInWithEmailAndPassword(
                       auth,
                       user.email as string,
                       confirmPassword
@@ -171,7 +180,7 @@ export default function DeleteUserPage() {
                     setConfirmPassword('');
                     setShowConfirm(false);
                     handleDelete();
-                  } catch (err) {
+                  } catch {
                     setPasswordError('Contraseña incorrecta. Inténtelo de nuevo.');
                   }
                 }}

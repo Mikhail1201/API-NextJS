@@ -4,6 +4,7 @@ import { FaLock, FaUser, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { useSignInWithEmailAndPassword } from 'react-firebase-hooks/auth';
 import { auth } from '@/app/firebase/config';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -12,9 +13,8 @@ export default function Login() {
     const [showPassword, setShowPassword] = useState(false);
     const [showError, setShowError] = useState(false);
 
-    const [signInWithEmailAndPassword, user, loading, error] = useSignInWithEmailAndPassword(auth);
+    const [signInWithEmailAndPassword] = useSignInWithEmailAndPassword(auth);
     const router = useRouter();
-
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -29,8 +29,8 @@ export default function Login() {
                 // Login failed (invalid credentials)
                 setShowError(true);
             }
-        } catch (error) {
-            console.error('Login failed:', error);
+        } catch {
+            // Handle error (e.g., show error message)
             setShowError(true);
         }
     };
@@ -47,10 +47,13 @@ export default function Login() {
             {/* Login Box */}
             <div className="z-10 w-full max-w-sm bg-white rounded-2xl shadow-xl p-8">
                 <div className="text-center mb-6">
-                    <img
-                        src="Logo.jpeg"
+                    {/* Usa next/image para mejor LCP */}
+                    <Image
+                        src="/Logo.jpeg"
                         alt="CAM Soluciones S.A.S. Logo"
-                        className="mx-auto mb-2 w-32 h-32 object-contain"
+                        width={128}
+                        height={128}
+                        className="mx-auto mb-2 object-contain"
                         draggable={false}
                     />
                     <h1 className="text-xl font-bold text-gray-800">Bienvenido</h1>
@@ -114,13 +117,13 @@ export default function Login() {
                     {showError && (
                         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
                             <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-xs text-center">
-                                <h2 className="text-lg font-bold mb-2 text-red-600">Login Failed</h2>
-                                <p className="mb-4 text-gray-800">Invalid email or password.</p>
+                                <h2 className="text-lg font-bold mb-2 text-red-600">Error de inicio de sesión</h2>
+                                <p className="mb-4 text-gray-800">Correo o contraseña inválidos.</p>
                                 <button
                                     onClick={() => setShowError(false)}
                                     className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
                                 >
-                                    Close
+                                    Cerrar
                                 </button>
                             </div>
                         </div>
@@ -128,25 +131,19 @@ export default function Login() {
 
                     {/* Footer */}
                     <div className="pt-4 border-t text-center text-xs text-gray-500">
-                        Mik's Login &copy; 2025
+                        Mik&apos;s Login &copy; 2025
                     </div>
                 </form>
             </div>
 
             {/* Keyframes for float animation */}
             <style jsx>{`
-        @keyframes float {
-          0% {
-            transform: translate(0, 0) rotate(0deg);
-          }
-          50% {
-            transform: translate(20px, 30px) rotate(180deg);
-          }
-          100% {
-            transform: translate(0, 0) rotate(360deg);
-          }
-        }
-      `}</style>
+                @keyframes float {
+                    0% { transform: translate(0, 0) rotate(0deg); }
+                    50% { transform: translate(20px, 30px) rotate(180deg); }
+                    100% { transform: translate(0, 0) rotate(360deg); }
+                }
+            `}</style>
         </div>
     );
 }

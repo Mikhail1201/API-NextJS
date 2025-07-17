@@ -1,12 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  FaUser,
   FaSearch,
   FaPlus,
   FaTrash,
-  FaSignOutAlt,
   FaUserEdit,
   FaUserMinus,
 } from 'react-icons/fa';
@@ -15,16 +13,13 @@ import { auth } from '@/app/firebase/config';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { getDoc, doc, getFirestore } from 'firebase/firestore';
+import Image from 'next/image';
 
 export default function Homepage() {
   const [user, loading] = useAuthState(auth);
-  const [userName, setUserName] = useState('');
-  const [userRole, setUserRole] = useState('');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showBottomButtons, setShowBottomButtons] = useState(false);
   const [roleChecked, setRoleChecked] = useState(false);
 
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -40,8 +35,6 @@ export default function Homepage() {
           const db = getFirestore();
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           const data = userDoc.exists() ? userDoc.data() : {};
-          setUserName(data.name || 'User');
-          setUserRole(data.role || '');
           if (data.role === 'admin' || data.role === 'superadmin') {
             setShowBottomButtons(true);
           } else {
@@ -56,10 +49,7 @@ export default function Homepage() {
             router.push('/login');
           }
           setRoleChecked(true);
-        } catch (err) {
-          console.error('Error getting user data:', err);
-          setUserName('User');
-          setUserRole('');
+        } catch {
           setShowBottomButtons(false);
           await signOut(auth);
           router.push('/login');
@@ -68,17 +58,7 @@ export default function Homepage() {
       }
     };
     fetchUserData();
-  }, [user]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [user, router]);
 
   if (loading || !user || !roleChecked) return null;
 
@@ -122,7 +102,7 @@ export default function Homepage() {
       label: 'Eliminar',
       baseColor: 'text-[#e74c3c]',
       hoverColor: 'group-hover:text-[#e74c3c]',
-      onClick: handleDeleteReport, // <-- updated here
+      onClick: handleDeleteReport,
     },
   ];
 
@@ -150,9 +130,11 @@ export default function Homepage() {
       {/* Logo in top-left corner */}
       <div className="fixed top-4 left-4 z-30">
         <div className="w-20 h-20 rounded-full bg-white shadow-lg flex items-center justify-center overflow-hidden">
-          <img
-            src="Logo.jpeg"
+          <Image
+            src="/Logo.jpeg"
             alt="CAM Soluciones S.A.S. Logo"
+            width={80}
+            height={80}
             className="w-20 h-20 object-contain scale-125 transition-transform duration-300"
             draggable={false}
             style={{ border: 'none' }}

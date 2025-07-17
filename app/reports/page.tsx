@@ -7,9 +7,24 @@ import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { signOut } from 'firebase/auth';
 
+// Define a type for your report data
+interface Report {
+  id: string;
+  request?: string;
+  number?: string;
+  reportdate?: string | { seconds: number };
+  description?: string;
+  pointofsell?: string;
+  quotation?: string;
+  deliverycertificate?: string;
+  state?: string;
+  bill?: string;
+  [key: string]: unknown;
+}
+
 export default function ReportsPage() {
   const router = useRouter();
-  const [reports, setReports] = useState<any[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [user, loading] = useAuthState(auth);
   const [roleChecked, setRoleChecked] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -18,8 +33,8 @@ export default function ReportsPage() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const reportsPerPage = 10;
   const db = getFirestore();
-  const [selectedReport, setSelectedReport] = useState<any | null>(null);
-  const [editReport, setEditReport] = useState<any | null>(null);
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [editReport, setEditReport] = useState<Report | null>(null);
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
@@ -34,7 +49,7 @@ export default function ReportsPage() {
       }
       setRoleChecked(true);
       const reportsSnapshot = await getDocs(collection(db, 'reports'));
-      const reportsList = reportsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const reportsList = reportsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
       setReports(reportsList);
     };
     if (!loading && user) {
@@ -61,10 +76,10 @@ export default function ReportsPage() {
     }
     return filtered.slice().sort((a, b) => {
       // Handle Firestore Timestamp or string date
-      const getDateValue = (val: any) => {
+      const getDateValue = (val: string | { seconds: number } | undefined) => {
         if (!val) return 0;
         if (typeof val === 'string') return new Date(val).getTime();
-        if (val.seconds) return val.seconds * 1000;
+        if (typeof val === 'object' && 'seconds' in val) return val.seconds * 1000;
         return 0;
       };
       const aTime = getDateValue(a.reportdate);
@@ -120,7 +135,7 @@ export default function ReportsPage() {
         >
           <option value="all">Todos los Puntos de Venta</option>
           {uniquePoints.map(point => (
-            <option key={point} value={point}>{point}</option>
+            <option key={point as string} value={point as string}>{point as string}</option>
           ))}
         </select>
 
@@ -132,7 +147,7 @@ export default function ReportsPage() {
         >
           <option value="all">Todos los Estados</option>
           {uniqueStates.map(state => (
-            <option key={state} value={state}>{state}</option>
+            <option key={state as string} value={state as string}>{state as string}</option>
           ))}
         </select>
       </div>
@@ -166,7 +181,11 @@ export default function ReportsPage() {
                 >
                   <td className="px-2 py-1">{report.request || '-'}</td>
                   <td className="px-2 py-1">{report.number || '-'}</td>
-                  <td className="px-2 py-1">{report.reportdate || '-'}</td>
+                  <td className="px-2 py-1">
+                    {typeof report.reportdate === 'object' && report.reportdate && 'seconds' in report.reportdate
+                      ? new Date(report.reportdate.seconds * 1000).toLocaleDateString('es-CO')
+                      : report.reportdate || '-'}
+                  </td>
                   <td className="px-2 py-1">{report.description || '-'}</td>
                   <td className="px-2 py-1">{report.pointofsell || '-'}</td>
                   <td className="px-2 py-1">{report.quotation || '-'}</td>
@@ -246,7 +265,10 @@ export default function ReportsPage() {
                 <strong>Número:</strong> {selectedReport.number || '-'}
               </div>
               <div>
-                <strong>Fecha de Reporte:</strong> {selectedReport.reportdate || '-'}
+                <strong>Fecha de Reporte:</strong> 
+                {typeof selectedReport.reportdate === 'object' && selectedReport.reportdate && 'seconds' in selectedReport.reportdate
+                  ? new Date(selectedReport.reportdate.seconds * 1000).toLocaleDateString('es-CO')
+                  : selectedReport.reportdate || '-'}
               </div>
               <div>
                 <strong>Descripción:</strong> {selectedReport.description || '-'}
@@ -306,7 +328,11 @@ export default function ReportsPage() {
                 <input
                   type="date"
                   className="w-full border rounded p-1 mt-1"
-                  value={editReport.reportdate || ''}
+                  value={
+                    typeof editReport.reportdate === 'object' && editReport.reportdate && 'seconds' in editReport.reportdate
+                      ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
+                      : editReport.reportdate || ''
+                  }
                   onChange={e => setEditReport({ ...editReport, reportdate: e.target.value })}
                 />
               </div>

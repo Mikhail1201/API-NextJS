@@ -25,7 +25,7 @@ export default function UserDropdown() {
           const data = userDoc.exists() ? userDoc.data() : {};
           setUserName(data.name || 'User');
           setUserRole(data.role || '');
-        } catch (err) {
+        } catch {
           setUserName('User');
           setUserRole('');
         }
@@ -67,18 +67,6 @@ export default function UserDropdown() {
 
       {dropdownOpen && (
         <div className="absolute top-[50px] right-0 bg-white rounded-lg shadow-2xl w-40 z-[99999] opacity-100 transition-all">
-          {/* Import - only for admin and superadmin */}
-          {/* {(userRole === 'admin' || userRole === 'superadmin') && (
-            <div
-              onClick={() => {
-                setDropdownOpen(false);
-                router.push('/import');
-              }}
-              className="flex items-center px-4 py-3 text-sm text-gray-800 hover:bg-green-50 hover:text-green-600 cursor-pointer border-b border-gray-100"
-            >
-              <span className="mr-2">⬆️</span> Importar
-            </div>
-          )} */}
           {/* Export - for everyone with a role */}
           {userRole && (
             <div
