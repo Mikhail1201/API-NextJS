@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { signOut } from 'firebase/auth';
 
+/* ================== Tipos ================== */
 interface Report {
   id: string;
   request?: string;
@@ -40,30 +41,137 @@ type FilterField =
   | 'servicedescription'
   | 'asesorias';
 
+/** Estados conocidos */
+const KNOWN_STATES = [
+  'En Programación',
+  'En Espera Aprobación',
+  'pndte cotización',
+  'En Ejecución',
+  'Ejecutado',
+  'N/A',
+] as const;
+
+type BaseStateKey = typeof KNOWN_STATES[number];
+
+/* ================== Colores: utilidades ================== */
+const DEFAULT_BASE_COLORS: Record<BaseStateKey, string> = {
+  'En Programación': '#0EA5E9',
+  'En Espera Aprobación': '#F59E0B',
+  'pndte cotización': '#EAB308',
+  'En Ejecución': '#6366F1',
+  'Ejecutado': '#22C55E',
+  'N/A': '#64748B',
+};
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = hex.replace('#', '').trim();
+  const valid = /^[0-9a-fA-F]{6}$/.test(m) || /^[0-9a-fA-F]{3}$/.test(m);
+  if (!valid) return null;
+  let r = 0, g = 0, b = 0;
+  if (m.length === 3) {
+    r = parseInt(m[0] + m[0], 16);
+    g = parseInt(m[1] + m[1], 16);
+    b = parseInt(m[2] + m[2], 16);
+  } else {
+    r = parseInt(m.slice(0, 2), 16);
+    g = parseInt(m.slice(2, 4), 16);
+    b = parseInt(m.slice(4, 6), 16);
+  }
+  return { r, g, b };
+}
+
+function rgbToHex({ r, g, b }: { r: number; g: number; b: number }) {
+  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+  const to2 = (n: number) => clamp(n).toString(16).padStart(2, '0');
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
+}
+
+function mix(hex1: string, hex2: string, weight: number) {
+  const a = hexToRgb(hex1);
+  const b = hexToRgb(hex2);
+  if (!a || !b) return hex1;
+  const w = Math.max(0, Math.min(1, weight));
+  return rgbToHex({
+    r: a.r * (1 - w) + b.r * w,
+    g: a.g * (1 - w) + b.g * w,
+    b: a.b * (1 - w) + b.b * w,
+  });
+}
+
+function lighten(hex: string, amount: number) {
+  return mix(hex, '#ffffff', amount);
+}
+function darken(hex: string, amount: number) {
+  return mix(hex, '#000000', amount);
+}
+
+function getContrastText(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return '#111827';
+  const { r, g, b } = rgb;
+  const srgb = [r, g, b].map((v) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  });
+  const L = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+  return L > 0.6 ? '#111827' : '#ffffff';
+}
+
+function deriveStylesFromBase(baseHex: string) {
+  const rowBg = lighten(baseHex, 0.85);
+  const rowHover = lighten(baseHex, 0.75);
+  const badgeBg = lighten(baseHex, 0.40);
+  const badgeText = getContrastText(badgeBg);
+  const optBg = lighten(baseHex, 0.90);
+  const optText = getContrastText(optBg);
+  return { rowBg, rowHover, badgeBg, badgeText, optBg, optText };
+}
+
+function pickStateKey(raw?: string): BaseStateKey | null {
+  if (!raw) return null;
+  const s = raw.toLowerCase();
+  if (s.includes('ejecut')) return 'Ejecutado';
+  if (s.includes('final')) return 'Ejecutado';
+  if (s.includes('program')) return 'En Programación';
+  if (s.includes('espera') || s.includes('aprob')) return 'En Espera Aprobación';
+  if (s.includes('pndte') || s.includes('pend') || s.includes('cotiz')) return 'pndte cotización';
+  if (s.includes('ejecución') || s.includes('ejecucion')) return 'En Ejecución';
+  if (s.includes('n/a')) return 'N/A';
+  if ((KNOWN_STATES as readonly string[]).includes(raw)) return raw as BaseStateKey;
+  return null;
+}
+
+/* ================== Componente principal ================== */
+
 export default function ReportsPage() {
   const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
   const [user, loading] = useAuthState(auth);
   const [roleChecked, setRoleChecked] = useState(false);
 
-  // Orden y paginación
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const reportsPerPage = 5;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Filtros
   const [filterField, setFilterField] = useState<FilterField | ''>('');
-  const [filterValue, setFilterValue] = useState<string>(''); // usado solo para pointofsell/state
+  const [filterValue, setFilterValue] = useState<string>('');
 
-  // Búsqueda de texto
   const [textQuery, setTextQuery] = useState<string>('');
 
-  const db = getFirestore();
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [editReport, setEditReport] = useState<Report | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  // ---- helpers ----
+  const [showConfig, setShowConfig] = useState(false);
+
+  // Colores base por estado (por usuario)
+  const [stateBaseColors, setStateBaseColors] = useState<Record<BaseStateKey, string>>(
+    { ...DEFAULT_BASE_COLORS }
+  );
+
+  const db = getFirestore();
+
+  /* ---------- helpers existentes ---------- */
   const formatReportDate = (val: string | { seconds: number } | undefined) => {
     if (!val) return '-';
     try {
@@ -74,7 +182,7 @@ export default function ReportsPage() {
       if (typeof val === 'object' && 'seconds' in val && typeof val.seconds === 'number') {
         return new Date(val.seconds * 1000).toLocaleDateString('es-CO');
       }
-    } catch { }
+    } catch {}
     return '-';
   };
 
@@ -94,6 +202,7 @@ export default function ReportsPage() {
     return m ? Number(m[0]) : NaN;
   };
 
+  // Link (quotation / asesorías)
   const extractFirstUrl = (text?: string | null): string | null => {
     if (!text) return null;
     const match = text.match(/(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
@@ -119,10 +228,12 @@ export default function ReportsPage() {
     );
   };
 
+  /* ---------- Auth + datos + preferencias (vía API) ---------- */
   useEffect(() => {
-    const checkRoleAndFetchReports = async () => {
+    const run = async () => {
       if (!user) return;
 
+      // Verifica rol
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       const data: UserDocData | undefined = userDoc.exists() ? (userDoc.data() as UserDocData) : undefined;
       const userRole: string | null = data?.role ?? null;
@@ -132,29 +243,78 @@ export default function ReportsPage() {
         router.push('/login');
         return;
       }
-
       setRoleChecked(true);
 
+      // Trae reportes
       const reportsSnapshot = await getDocs(collection(db, 'reports'));
-      const reportsList = reportsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Report));
+      const reportsList = reportsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
       setReports(reportsList);
+
+      // Trae preferencias del usuario desde la API
+      try {
+        const idToken = await auth.currentUser?.getIdToken();
+        if (idToken) {
+          const res = await fetch('/api/user-prefs', {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+          if (res.ok) {
+            const json = (await res.json()) as { stateColors?: Record<string, string> };
+            const stored = json.stateColors || {};
+            const merged: Record<BaseStateKey, string> = { ...DEFAULT_BASE_COLORS };
+            (KNOWN_STATES as readonly BaseStateKey[]).forEach((k) => {
+              const val = stored[k];
+              merged[k] = typeof val === 'string' ? normalizeHex(val) : DEFAULT_BASE_COLORS[k];
+            });
+            setStateBaseColors(merged);
+          }
+        }
+      } catch {
+        // si falla, seguimos con defaults
+      }
     };
 
-    if (!loading && user) checkRoleAndFetchReports();
+    if (!loading && user) run();
   }, [user, loading, db, router]);
 
+  /* ---------- únicos ---------- */
   const uniquePoints = useMemo(
-    () => Array.from(new Set(reports.map(r => r.pointofsell).filter(Boolean))) as string[],
+    () => Array.from(new Set(reports.map((r) => r.pointofsell).filter(Boolean))) as string[],
     [reports]
   );
   const uniqueStates = useMemo(
-    () => Array.from(new Set(reports.map(r => r.state).filter(Boolean))) as string[],
+    () => Array.from(new Set(reports.map((r) => r.state).filter(Boolean))) as string[],
     [reports]
   );
 
-  // Campo a usar para ordenar; por defecto fecha
-  const sortKey: FilterField = (filterField || 'reportdate') as FilterField;
+  /* ---------- Derivar estilos ---------- */
+  const derivedForKey = (k: BaseStateKey) => deriveStylesFromBase(stateBaseColors[k]);
 
+  const derivedStylesMap = useMemo(() => {
+    const m: Record<BaseStateKey, ReturnType<typeof deriveStylesFromBase>> = {} as any;
+    (KNOWN_STATES as readonly BaseStateKey[]).forEach((k) => {
+      m[k] = derivedForKey(k);
+    });
+    return m;
+  }, [stateBaseColors]);
+
+  const styleForStateValue = (raw?: string) => {
+    const key = pickStateKey(raw);
+    if (!key) {
+      return {
+        rowBg: '',
+        rowHover: '#e0f2fe',
+        badgeBg: '#e5e7eb',
+        badgeText: '#111827',
+        optBg: '#ffffff',
+        optText: '#111827',
+      };
+    }
+    return derivedStylesMap[key];
+  };
+
+  /* ---------- Orden/filtrado ---------- */
+  const sortKey: FilterField = (filterField || 'reportdate') as FilterField;
   const isNumericKey = (k: FilterField) => k === 'request' || k === 'number' || k === 'bill';
   const isDateKey = (k: FilterField) => k === 'reportdate';
 
@@ -168,24 +328,24 @@ export default function ReportsPage() {
     filterField === 'servicename'
       ? 'servicename'
       : filterField === 'servicedescription'
-        ? 'servicedescription'
-        : filterField === 'asesorias'
-          ? 'asesorias'
-          : 'description';
+      ? 'servicedescription'
+      : filterField === 'asesorias'
+      ? 'asesorias'
+      : 'description';
 
   const textPlaceholder = isTextualFieldSelected
     ? textTarget === 'servicename'
       ? 'Buscar en nombre del servicio...'
       : textTarget === 'servicedescription'
-        ? 'Buscar en descripción del servicio...'
-        : textTarget === 'asesorias'
-          ? 'Buscar en asesorías...'
-          : 'Buscar en descripción...'
+      ? 'Buscar en descripción del servicio...'
+      : textTarget === 'asesorias'
+      ? 'Buscar en asesorías...'
+      : 'Buscar en descripción...'
     : "Selecciona 'Descripción', 'Nombre del Servicio', 'Descripción del Servicio' o 'Asesorías' para buscar";
 
   useEffect(() => {
     if (!isTextualFieldSelected && textQuery) setTextQuery('');
-  }, [isTextualFieldSelected]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isTextualFieldSelected]);
 
   const FIELD_LABELS: Record<FilterField, string> = {
     request: 'Solicitud/Aviso',
@@ -203,29 +363,24 @@ export default function ReportsPage() {
   };
 
   const sortDescription = useMemo(() => {
-    if (isDateKey(sortKey)) {
-      return sortOrder === 'desc' ? 'Más recientes' : 'Más antiguos';
-    }
-    if (isNumericKey(sortKey)) {
-      return sortOrder === 'desc' ? 'Mayor a menor' : 'Menor a mayor';
-    }
+    if (isDateKey(sortKey)) return sortOrder === 'desc' ? 'Más recientes' : 'Más antiguos';
+    if (isNumericKey(sortKey)) return sortOrder === 'desc' ? 'Mayor a menor' : 'Menor a mayor';
     return sortOrder === 'desc' ? 'Z → A' : 'A → Z';
   }, [sortKey, sortOrder]);
 
-  // Filtrado + orden
   const filteredReports = useMemo(() => {
     let filtered = reports;
 
     if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
-      filtered = filtered.filter(r => r.pointofsell === filterValue);
+      filtered = filtered.filter((r) => r.pointofsell === filterValue);
     }
     if (filterField === 'state' && filterValue && filterValue !== 'all') {
-      filtered = filtered.filter(r => r.state === filterValue);
+      filtered = filtered.filter((r) => r.state === filterValue);
     }
 
     if (isTextualFieldSelected && textQuery.trim()) {
       const q = textQuery.toLowerCase();
-      filtered = filtered.filter(r => String(r[textTarget] ?? '').toLowerCase().includes(q));
+      filtered = filtered.filter((r) => String(r[textTarget] ?? '').toLowerCase().includes(q));
     }
 
     const asc = sortOrder === 'asc';
@@ -252,7 +407,11 @@ export default function ReportsPage() {
       return asc ? av - bv : bv - av;
     };
 
-    const cmpString = (a: Report, b: Report, key: Exclude<FilterField, 'reportdate' | 'request' | 'number'>) => {
+    const cmpString = (
+      a: Report,
+      b: Report,
+      key: Exclude<FilterField, 'reportdate' | 'request' | 'number'>
+    ) => {
       const av = String(a[key] ?? '').toLowerCase();
       const bv = String(b[key] ?? '').toLowerCase();
       const aMiss = av === '';
@@ -309,15 +468,35 @@ export default function ReportsPage() {
 
   if (loading || !roleChecked) return null;
 
+  const filterStateDerived = styleForStateValue(filterValue && filterValue !== 'all' ? filterValue : undefined);
+
   return (
     <div className="relative h-screen flex flex-col items-center px-4 py-8 overflow-hidden">
+      {/* Volver */}
       <button
         onClick={() => router.push('/')}
         className="absolute top-4 left-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
         aria-label="Go back to homepage"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+
+      {/* Configuración (abajo-derecha) */}
+      <button
+        onClick={() => setShowConfig(true)}
+        className="fixed bottom-4 right-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
+        aria-label="Abrir configuraciones"
+        title="Configuraciones"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.877 2.42 2.42a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.89-1.543.877-3.31 2.42-2.42.93.537 2.107.214 2.573-1.066z" />
+          <path strokeLinecap="round" strokeLinejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
 
@@ -348,20 +527,11 @@ export default function ReportsPage() {
           <option value="">Seleccionar campo</option>
           {(
             [
-              'request',
-              'number',
-              'reportdate',
-              'description',
-              'pointofsell',
-              'quotation',
-              'deliverycertificate',
-              'state',
-              'bill',
-              'servicename',
-              'servicedescription',
-              'asesorias',
+              'request', 'number', 'reportdate', 'description', 'pointofsell',
+              'quotation', 'deliverycertificate', 'state', 'bill',
+              'servicename', 'servicedescription', 'asesorias',
             ] as FilterField[]
-          ).map(f => (
+          ).map((f) => (
             <option key={f} value={f}>{FIELD_LABELS[f]}</option>
           ))}
         </select>
@@ -373,7 +543,7 @@ export default function ReportsPage() {
             className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
           >
             <option value="all">Todos</option>
-            {uniquePoints.map(p => <option key={p} value={p}>{p}</option>)}
+            {uniquePoints.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         )}
 
@@ -381,10 +551,25 @@ export default function ReportsPage() {
           <select
             value={filterValue || 'all'}
             onChange={(e) => { setFilterValue(e.target.value); setCurrentPage(1); }}
-            className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
+            className="cursor-pointer p-2 rounded-lg border border-gray-300 appearance-none"
+            style={{
+              backgroundColor: filterValue && filterValue !== 'all' ? filterStateDerived.optBg : '#ffffff',
+              color: filterValue && filterValue !== 'all' ? filterStateDerived.optText : '#111827',
+            }}
           >
-            <option value="all">Todos</option>
-            {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
+            <option value="all" style={{ backgroundColor: '#ffffff', color: '#111827' }}>Todos</option>
+            {uniqueStates.map((s) => {
+              const st = styleForStateValue(s);
+              return (
+                <option
+                  key={s}
+                  value={s}
+                  style={{ backgroundColor: st.optBg, color: st.optText }}
+                >
+                  {s}
+                </option>
+              );
+            })}
           </select>
         )}
 
@@ -394,8 +579,9 @@ export default function ReportsPage() {
           onChange={(e) => { setTextQuery(e.target.value); setCurrentPage(1); }}
           placeholder={textPlaceholder}
           disabled={!isTextualFieldSelected}
-          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${!isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${
+            !isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         />
       </div>
 
@@ -405,7 +591,7 @@ export default function ReportsPage() {
           <div
             className="overflow-x-auto scrollbar-hide cursor-grab"
             style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
-            onWheel={e => {
+            onWheel={(e) => {
               if (e.deltaY !== 0) {
                 e.currentTarget.scrollLeft += e.deltaY;
                 e.preventDefault();
@@ -415,23 +601,31 @@ export default function ReportsPage() {
             <table className="min-w-[1400px] table-auto border-collapse text-sm text-gray-800">
               <thead className="bg-gray-100 text-gray-700">
                 <tr>
-                  {COLS.map(c => (
+                  {COLS.map((c) => (
                     <th key={c.key} className={c.className}>{c.label}</th>
                   ))}
                 </tr>
               </thead>
 
               <tbody>
-                {paginatedReports.map(report => {
+                {paginatedReports.map((report) => {
+                  const derived = styleForStateValue(report.state);
+
                   const rowCells: ReactNode[] = [
                     report.request || '-',
                     report.number || '-',
                     formatReportDate(report.reportdate),
-                    <div className="h-12 overflow-y-auto flex items-center justify-center" key="desc">{report.description || '-'}</div>,
+                    <div className="h-12 overflow-y-auto" key="desc">{report.description || '-'}</div>,
                     report.pointofsell || '-',
                     <LinkCell value={report.quotation} key="quotation" />,
                     report.deliverycertificate || '-',
-                    report.state || '-',
+                    <span
+                      key="state"
+                      className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}
+                    >
+                      {report.state || '-'}
+                    </span>,
                     report.bill || '-',
                     report.servicename || '-',
                     report.servicedescription || '-',
@@ -441,7 +635,13 @@ export default function ReportsPage() {
                   return (
                     <tr
                       key={report.id}
-                      className="border-t border-gray-200 hover:bg-blue-100 cursor-pointer transition"
+                      className="border-t border-gray-200 cursor-pointer transition state-row"
+                      style={
+                        {
+                          ['--row-bg' as any]: derived.rowBg,
+                          ['--row-hover' as any]: derived.rowHover,
+                        } as React.CSSProperties
+                      }
                       onClick={() => {
                         setSelectedReport(report);
                         setEditReport({ ...report });
@@ -470,7 +670,7 @@ export default function ReportsPage() {
             </button>
 
             {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(page => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 2)
+              .filter((page) => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 2)
               .map((page, idx, arr) => {
                 const prev = arr[idx - 1];
                 const showEllipsis = prev && page - prev > 1;
@@ -479,10 +679,11 @@ export default function ReportsPage() {
                     {showEllipsis && <span className="px-1">...</span>}
                     <button
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded cursor-pointer text-black ${currentPage === page
-                        ? 'bg-blue-600 text-white font-bold'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
+                      className={`px-3 py-1 rounded cursor-pointer text-black ${
+                        currentPage === page
+                          ? 'bg-blue-600 text-white font-bold'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
                     >
                       {page}
                     </button>
@@ -541,160 +742,163 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Modal Editar (con controles de altura uniforme) */}
-      {/* ====== Editar Reporte ====== */}
-      {/* Modal Editar */}
       {/* Modal Editar */}
       {showModal && selectedReport && editReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
             <h2 className="text-xl font-semibold mb-4 text-black">Editar Reporte</h2>
-
-            {/* Grid: 3 columnas x 4 filas */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-4 text-black">
-
-              {/* Fila 1 */}
-              <div>
-                <strong>Solicitud/Aviso:</strong>
-                <input
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.request || ''}
-                  onChange={e => setEditReport({ ...editReport, request: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <strong>Punto de Venta:</strong>
-                <select
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.pointofsell ?? ''}
-                  onChange={e => setEditReport({ ...editReport, pointofsell: e.target.value })}
-                >
-                  <option value="" disabled>Selecciona un punto de venta</option>
-                  {editReport.pointofsell && !uniquePoints.includes(editReport.pointofsell) && (
-                    <option value={editReport.pointofsell}>{editReport.pointofsell} (actual)</option>
-                  )}
-                  {uniquePoints.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <strong>Estado:</strong>
-                <select
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.state || ''}
-                  onChange={e => setEditReport({ ...editReport, state: e.target.value })}
-                  required
-                >
-                  <option value="" disabled>Selecciona un estado</option>
-                  <option value="En Programación">En Programación</option>
-                  <option value="En Espera Aprobación">En Espera Aprobación</option>
-                  <option value="pndte cotización">Pendiente de Cotización</option>
-                  <option value="En Ejecución">En Ejecución</option>
-                  <option value="Ejecutado">Ejecutado</option>
-                  <option value="N/A">N/A</option>
-                </select>
-              </div>
-
-              {/* Fila 2 */}
-              <div>
-                <strong>Presupuesto:</strong>
-                <input
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.number || ''}
-                  onChange={e => setEditReport({ ...editReport, number: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <strong>Cotización:</strong>
-                <input
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.quotation || ''}
-                  onChange={e => setEditReport({ ...editReport, quotation: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <strong>Nombre del Servicio:</strong>
-                <input
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.servicename || ''}
-                  onChange={e => setEditReport({ ...editReport, servicename: e.target.value })}
-                />
-              </div>
-
-              {/* Fila 3 */}
-              <div>
-                <strong>Fecha de Reporte:</strong>
-                <input
-                  type="date"
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={
-                    typeof editReport.reportdate === 'object' &&
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-black">
+              {/* Columna 1 */}
+              <div className="flex flex-col gap-2">
+                <div>
+                  <strong>Solicitud/Aviso:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={editReport.request || ''}
+                    onChange={(e) => setEditReport({ ...editReport, request: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Presupuesto:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={editReport.number || ''}
+                    onChange={(e) => setEditReport({ ...editReport, number: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Fecha de Reporte:</strong>
+                  <input
+                    type="date"
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={
+                      typeof editReport.reportdate === 'object' &&
                       editReport.reportdate &&
                       'seconds' in editReport.reportdate
-                      ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
-                      : (editReport.reportdate as string) || ''
-                  }
-                  onChange={e => setEditReport({ ...editReport, reportdate: e.target.value })}
-                />
+                        ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
+                        : (editReport.reportdate as string) || ''
+                    }
+                    onChange={(e) => setEditReport({ ...editReport, reportdate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Descripción:</strong>
+                  <textarea
+                    className="w-full border rounded p-1 mt-1 h-10 resize-none align-middle"
+                    value={editReport.description || ''}
+                    onChange={(e) => setEditReport({ ...editReport, description: e.target.value })}
+                  />
+                </div>
               </div>
 
-              <div>
-                <strong>Acta de Entrega:</strong>
-                <input
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.deliverycertificate || ''}
-                  onChange={e => setEditReport({ ...editReport, deliverycertificate: e.target.value })}
-                />
+              {/* Columna 2 */}
+              <div className="flex flex-col gap-2">
+                <div>
+                  <strong>Punto de Venta:</strong>
+                  <select
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={editReport.pointofsell ?? ''}
+                    onChange={(e) => setEditReport({ ...editReport, pointofsell: e.target.value })}
+                  >
+                    <option value="" disabled>Selecciona un punto de venta</option>
+                    {editReport.pointofsell && !uniquePoints.includes(editReport.pointofsell) && (
+                      <option value={editReport.pointofsell}>
+                        {editReport.pointofsell} (actual)
+                      </option>
+                    )}
+                    {uniquePoints.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <strong>Cotización:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={editReport.quotation || ''}
+                    onChange={(e) => setEditReport({ ...editReport, quotation: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Acta de Entrega:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={editReport.deliverycertificate || ''}
+                    onChange={(e) => setEditReport({ ...editReport, deliverycertificate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Factura:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={editReport.bill || ''}
+                    onChange={(e) => setEditReport({ ...editReport, bill: e.target.value })}
+                  />
+                </div>
               </div>
 
-              <div>
-                <strong>Descripción del Servicio:</strong>
-                <textarea
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black resize-none leading-10 py-0"
-                  rows={1}
-                  value={editReport.servicedescription || ''}
-                  onChange={e => setEditReport({ ...editReport, servicedescription: e.target.value })}
-                />
-              </div>
-
-              {/* Fila 4 */}
-              <div>
-                <strong>Descripción:</strong>
-                <textarea
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black resize-none leading-10 py-0"
-                  rows={1}
-                  value={editReport.description || ''}
-                  onChange={e => setEditReport({ ...editReport, description: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <strong>Factura:</strong>
-                <input
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
-                  value={editReport.bill || ''}
-                  onChange={e => setEditReport({ ...editReport, bill: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <strong>Asesorías:</strong>
-                <textarea
-                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black resize-none leading-10 py-0"
-                  rows={1}
-                  placeholder="Detalle de asesorías"
-                  value={editReport.asesorias || ''}
-                  onChange={e => setEditReport({ ...editReport, asesorias: e.target.value })}
-                />
+              {/* Columna 3 */}
+              <div className="flex flex-col gap-2">
+                <div>
+                  <strong>Estado:</strong>
+                  {(() => {
+                    const key = pickStateKey(editReport.state) || 'N/A';
+                    const st = derivedStylesMap[key];
+                    return (
+                      <select
+                        className="w-full border rounded p-1 mt-1 h-10"
+                        value={editReport.state || ''}
+                        onChange={(e) => setEditReport({ ...editReport, state: e.target.value })}
+                        required
+                        style={{ backgroundColor: st.optBg, color: st.optText }}
+                      >
+                        <option value="" disabled style={{ backgroundColor: '#ffffff', color: '#111827' }}>
+                          Selecciona un estado
+                        </option>
+                        {KNOWN_STATES.map((s) => {
+                          const ds = derivedStylesMap[s];
+                          return (
+                            <option
+                              key={s}
+                              value={s}
+                              style={{ backgroundColor: ds.optBg, color: ds.optText }}
+                            >
+                              {s}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    );
+                  })()}
+                </div>
+                <div>
+                  <strong>Nombre del Servicio:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1 h-10"
+                    value={editReport.servicename || ''}
+                    onChange={(e) => setEditReport({ ...editReport, servicename: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Descripción del Servicio:</strong>
+                  <textarea
+                    className="w-full border rounded p-1 mt-1 h-10 resize-none align-middle"
+                    value={editReport.servicedescription || ''}
+                    onChange={(e) => setEditReport({ ...editReport, servicedescription: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Asesorías:</strong>
+                  <textarea
+                    className="w-full border rounded p-1 mt-1 h-10 resize-none align-middle"
+                    value={editReport.asesorias || ''}
+                    onChange={(e) => setEditReport({ ...editReport, asesorias: e.target.value })}
+                    placeholder="Detalle de asesorías"
+                  />
+                </div>
               </div>
             </div>
-
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setShowModal(false)}
                 className="cursor-pointer px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition text-black"
@@ -719,10 +923,11 @@ export default function ReportsPage() {
                     successDiv.className =
                       'fixed bottom-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg flex items-center gap-2 opacity-0 transition-opacity duration-500 z-50';
                     successDiv.innerHTML = `
-<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
-</svg>
-<span>¡Reporte actualizado exitosamente! Actualizando en <span id="countdown">${seconds}</span>...</span>`;
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
+      </svg>
+      <span>¡Reporte actualizado exitosamente! Actualizando en <span id="countdown">${seconds}</span>...</span>
+    `;
                     document.body.appendChild(successDiv);
                     setTimeout(() => successDiv.classList.add('opacity-100'), 10);
                     const countdownInterval = setInterval(() => {
@@ -749,15 +954,174 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {/* Modal Configuración: Cambiar colores */}
+      {showConfig && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-2xl w-[92%] max-w-3xl p-6">
+            <h2 className="text-xl font-semibold text-black mb-1">Configuraciones</h2>
+            <p className="text-sm text-gray-600 mb-4">Cambiar colores por estado</p>
+
+            <div className="flex flex-col gap-3">
+              {KNOWN_STATES.map((k) => {
+                const base = stateBaseColors[k];
+                const derived = derivedStylesMap[k];
+                return (
+                  <div key={k} className="grid grid-cols-1 md:grid-cols-12 items-center gap-2 border rounded-lg p-3">
+                    <div className="md:col-span-3 text-sm font-medium text-gray-800">{k}</div>
+
+                    {/* Vista previa */}
+                    <div className="md:col-span-3">
+                      <div className="rounded-md border text-xs" style={{ backgroundColor: derived.rowBg }}>
+                        <div className="flex items-center justify-between px-2 py-1">
+                          <span className="opacity-80">Fila</span>
+                          <span className="px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}>
+                            Chip
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pickers */}
+                    <div className="md:col-span-3 flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={normalizeHex(base)}
+                        onChange={(e) => handleColorChange(k, e.target.value)}
+                        className="w-10 h-10 p-0 border rounded cursor-pointer"
+                        title="Elige un color base"
+                      />
+                      <input
+                        type="text"
+                        value={normalizeHex(base)}
+                        onChange={(e) => handleHexTyping(k, e.target.value)}
+                        onBlur={(e) => commitHex(k, e.target.value)}
+                        className="flex-1 border rounded px-2 py-1 text-sm text-black"
+                        placeholder="#RRGGBB"
+                      />
+                    </div>
+
+                    {/* Reset */}
+                    <div className="md:col-span-3 flex justify-end">
+                      <button
+                        onClick={() => resetOne(k)}
+                        className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-3 py-2 rounded-md"
+                      >
+                        Restablecer
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between">
+              <button
+                onClick={resetAll}
+                className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-4 py-2 rounded-md"
+              >
+                Restablecer todos
+              </button>
+              <button
+                onClick={() => setShowConfig(false)}
+                className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-md"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Estilos globales */}
       <style jsx global>{`
         @keyframes fadeInDown {
           from { opacity: 0; transform: translateY(-20px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fadeInDown {
-          animation: fadeInDown 0.8s ease forwards;
+        .animate-fadeInDown { animation: fadeInDown 0.8s ease forwards; }
+
+        .state-row {
+          background-color: var(--row-bg);
+          transition: background-color 0.15s ease;
+        }
+        .state-row:hover {
+          background-color: var(--row-hover);
         }
       `}</style>
     </div>
   );
+
+  /* ====== funciones locales ====== */
+
+  function normalizeHex(v: string) {
+    let s = v.trim();
+    if (!s.startsWith('#')) s = `#${s}`;
+    const ok = /^#[0-9a-fA-F]{6}$/.test(s) || /^#[0-9a-fA-F]{3}$/.test(s);
+    if (!ok) return '#000000';
+    if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+      const r = s[1], g = s[2], b = s[3];
+      s = `#${r}${r}${g}${g}${b}${b}`;
+    }
+    return s.toUpperCase();
+  }
+
+  async function persistColors(next: Record<BaseStateKey, string>) {
+    if (!auth.currentUser) return;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      await fetch('/api/admin-user-prefs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ stateColors: next }),
+      });
+    } catch {
+      // no bloquear UI si falla
+    }
+  }
+
+  function handleColorChange(key: BaseStateKey, hex: string) {
+    const n = normalizeHex(hex);
+    setStateBaseColors((prev) => {
+      const next = { ...prev, [key]: n };
+      void persistColors(next);
+      return next;
+    });
+  }
+
+  function handleHexTyping(key: BaseStateKey, raw: string) {
+    if (/^#?[0-9a-fA-F]{0,6}$/.test(raw.trim())) {
+      if (/^#?[0-9a-fA-F]{6}$/.test(raw.trim())) {
+        const n = normalizeHex(raw);
+        setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+      }
+    }
+  }
+
+  function commitHex(key: BaseStateKey, raw: string) {
+    const n = normalizeHex(raw);
+    setStateBaseColors((prev) => {
+      const next = { ...prev, [key]: n };
+      void persistColors(next);
+      return next;
+    });
+  }
+
+  function resetOne(key: BaseStateKey) {
+    const def = DEFAULT_BASE_COLORS[key];
+    setStateBaseColors((prev) => {
+      const next = { ...prev, [key]: def };
+      void persistColors(next);
+      return next;
+    });
+  }
+
+  function resetAll() {
+    const all = { ...DEFAULT_BASE_COLORS };
+    setStateBaseColors(all);
+    void persistColors(all);
+  }
 }
