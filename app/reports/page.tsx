@@ -63,11 +63,6 @@ export default function ReportsPage() {
   const [editReport, setEditReport] = useState<Report | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  // Clases unificadas para los controles del modal (misma altura)
-  const ctrl = 'w-full border rounded px-3 py-[7px] h-10 text-black';
-  const ctrlTextarea = 'w-full border rounded px-5 py-[7px] h-10 text-black resize-none leading-[1.25rem]';
-  const ctrlSelect = 'w-full border rounded px-3 h-10 text-black';
-
   // ---- helpers ----
   const formatReportDate = (val: string | { seconds: number } | undefined) => {
     if (!val) return '-';
