@@ -28,9 +28,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* Only show dropdown if children exist (not on 404) */}
-        {children ? <UserDropdownHydrated /> : null}
-        {children}
+        <div className="min-h-screen w-full bg-gradient-to-br from-[#1a0a2e] via-[#0d324d] to-[#1d2671] overflow-visible">
+          {/* Decorative Background */}
+          <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+            <div className="absolute rounded-full bg-white/10 w-[12vw] h-[12vw] top-[10%] left-[10%] animate-[float_20s_linear_infinite]" />
+            <div className="absolute rounded-full bg-white/10 w-[10vw] h-[10vw] top-[70%] left-[85%] animate-[float_15s_linear_infinite] delay-[-3s]" />
+            <div className="absolute rounded-full bg-white/10 w-[7vw] h-[7vw] top-[25%] left-[80%] animate-[float_12s_linear_infinite] delay-[-5s]" />
+          </div>
+          {/* Only show dropdown if children exist (not on 404) */}
+          {children ? <UserDropdownHydrated /> : null}
+          {children}
+        </div>
       </body>
     </html>
   );

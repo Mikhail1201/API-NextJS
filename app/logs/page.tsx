@@ -85,7 +85,7 @@ export default function LogsPage() {
   if (loading || !roleChecked) return null;
 
   return (
-    <div className="relative h-screen flex flex-col items-center justify-between bg-gradient-to-br from-[#1a0a2e] via-[#0d324d] to-[#1d2671] px-4 py-16 overflow-hidden">
+    <div className="relative h-screen flex flex-col items-center justify-between px-4 py-16 overflow-hidden">
       <button
         onClick={() => router.push('/')}
         className="absolute top-4 left-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
@@ -215,17 +215,10 @@ export default function LogsPage() {
       </div>
 
       <style jsx global>{`
-        @keyframes float {
-          0% { transform: translate(0, 0) rotate(0deg); }
-          50% { transform: translate(15px, 25px) rotate(180deg); }
-          100% { transform: translate(0, 0) rotate(360deg); }
-        }
-
         @keyframes fadeInDown {
           from { opacity: 0; transform: translateY(-20px); }
           to { opacity: 1; transform: translateY(0); }
         }
-
         .animate-fadeInDown {
           animation: fadeInDown 0.8s ease forwards;
         }

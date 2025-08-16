@@ -114,14 +114,7 @@ export default function CreateReportPage() {
   if (loading || !user) return null;
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#1a0a2e] via-[#0d324d] to-[#1d2671] p-4">
-      {/* Background animations */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute rounded-full bg-white/10 w-[12vw] h-[12vw] top-[10%] left-[10%] animate-[float_20s_linear_infinite]" />
-        <div className="absolute rounded-full bg-white/10 w-[10vw] h-[10vw] top-[70%] left-[85%] animate-[float_15s_linear_infinite] delay-[-3s]" />
-        <div className="absolute rounded-full bg-white/10 w-[7vw] h-[7vw] top-[25%] left-[80%] animate-[float_12s_linear_infinite] delay-[-5s]" />
-      </div>
-
+    <div className="relative min-h-screen flex flex-col items-center justify-center p-4">
       {/* Form Container */}
       <div className="z-10 w-full max-w-3xl bg-white p-6 rounded-2xl shadow-xl">
         <div className="flex justify-center gap-4 mb-4">
@@ -272,22 +265,14 @@ export default function CreateReportPage() {
       </button>
 
       <style jsx global>{`
-        @keyframes float {
-          0% { transform: translate(0, 0) rotate(0deg); }
-          50% { transform: translate(15px, 25px) rotate(180deg); }
-          100% { transform: translate(0, 0) rotate(360deg); }
-        }
-
         @keyframes fadeIn {
           0% { opacity: 0; }
           100% { opacity: 1; }
         }
-
         @keyframes fadeOut {
           0% { opacity: 1; }
           100% { opacity: 0; }
         }
-
         .fade-in-success {
           animation: fadeIn 0.5s forwards, fadeOut 0.5s forwards 2.5s;
         }
