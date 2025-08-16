@@ -181,7 +181,7 @@ export default function ReportsPage() {
       if (typeof val === 'object' && 'seconds' in val && typeof val.seconds === 'number') {
         return new Date(val.seconds * 1000).toLocaleDateString('es-CO');
       }
-    } catch {}
+    } catch { }
     return '-';
   };
 
@@ -327,19 +327,19 @@ export default function ReportsPage() {
     filterField === 'servicename'
       ? 'servicename'
       : filterField === 'servicedescription'
-      ? 'servicedescription'
-      : filterField === 'asesorias'
-      ? 'asesorias'
-      : 'description';
+        ? 'servicedescription'
+        : filterField === 'asesorias'
+          ? 'asesorias'
+          : 'description';
 
   const textPlaceholder = isTextualFieldSelected
     ? textTarget === 'servicename'
       ? 'Buscar en nombre del servicio...'
       : textTarget === 'servicedescription'
-      ? 'Buscar en descripción del servicio...'
-      : textTarget === 'asesorias'
-      ? 'Buscar en asesorías...'
-      : 'Buscar en descripción...'
+        ? 'Buscar en descripción del servicio...'
+        : textTarget === 'asesorias'
+          ? 'Buscar en asesorías...'
+          : 'Buscar en descripción...'
     : "Selecciona 'Descripción', 'Nombre del Servicio', 'Descripción del Servicio' o 'Asesorías' para buscar";
 
   useEffect(() => {
@@ -470,7 +470,7 @@ export default function ReportsPage() {
   // const filterStateDerived = styleForStateValue(filterValue && filterValue !== 'all' ? filterValue : undefined);
 
   // Tipo seguro para variables CSS personalizadas
-  type RowStyle = CSSProperties & { ['--row-bg']?: string; ['--row-hover']?: string };
+  type RowStyle = CSSProperties & { ['--row-bg']?: string;['--row-hover']?: string };
 
   return (
     <div className="relative h-screen flex flex-col items-center px-4 py-8 overflow-hidden">
@@ -481,7 +481,7 @@ export default function ReportsPage() {
         aria-label="Go back to homepage"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none"
-             viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
       </button>
@@ -494,11 +494,11 @@ export default function ReportsPage() {
         title="Configuraciones"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6"
-             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.877 2.42 2.42a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.89-1.543.877-3.31 2.42-2.42.93.537 2.107.214 2.573-1.066z" />
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.877 2.42 2.42a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.89-1.543.877-3.31 2.42-2.42.93.537 2.107.214 2.573-1.066z" />
           <path strokeLinecap="round" strokeLinejoin="round"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
 
@@ -581,9 +581,8 @@ export default function ReportsPage() {
           onChange={(e) => { setTextQuery(e.target.value); setCurrentPage(1); }}
           placeholder={textPlaceholder}
           disabled={!isTextualFieldSelected}
-          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${
-            !isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
+          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${!isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
         />
       </div>
 
@@ -592,11 +591,17 @@ export default function ReportsPage() {
         <div className="flex-grow overflow-auto">
           <div
             className="overflow-x-auto scrollbar-hide cursor-grab"
-            style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
+            style={{
+              WebkitOverflowScrolling: 'touch',
+              scrollSnapType: 'x mandatory',
+              overscrollBehaviorX: 'contain',
+              overscrollBehaviorY: 'none',
+              touchAction: 'pan-x',
+              overflowY: 'hidden',
+            }}
             onWheel={(e) => {
               if (e.deltaY !== 0) {
-                e.currentTarget.scrollLeft += e.deltaY;
-                e.preventDefault();
+                e.currentTarget.scrollLeft += e.deltaY; // sin preventDefault
               }
             }}
           >
@@ -681,11 +686,10 @@ export default function ReportsPage() {
                     {showEllipsis && <span className="px-1">...</span>}
                     <button
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded cursor-pointer text-black ${
-                        currentPage === page
+                      className={`px-3 py-1 rounded cursor-pointer text-black ${currentPage === page
                           ? 'bg-blue-600 text-white font-bold'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                        }`}
                     >
                       {page}
                     </button>
@@ -775,8 +779,8 @@ export default function ReportsPage() {
                     className="w-full border rounded p-1 mt-1 h-10"
                     value={
                       typeof editReport.reportdate === 'object' &&
-                      editReport.reportdate &&
-                      'seconds' in editReport.reportdate
+                        editReport.reportdate &&
+                        'seconds' in editReport.reportdate
                         ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
                         : (editReport.reportdate as string) || ''
                     }
@@ -977,7 +981,7 @@ export default function ReportsPage() {
                         <div className="flex items-center justify-between px-2 py-1">
                           <span className="opacity-80">Fila</span>
                           <span className="px-2 py-0.5 rounded-full"
-                                style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}>
+                            style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}>
                             Chip
                           </span>
                         </div>
