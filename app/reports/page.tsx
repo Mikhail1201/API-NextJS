@@ -7,7 +7,6 @@ import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { signOut } from 'firebase/auth';
 
-// Define a type for your report data
 interface Report {
   id: string;
   request?: string;
@@ -15,7 +14,7 @@ interface Report {
   reportdate?: string | { seconds: number };
   description?: string;
   pointofsell?: string;
-  quotation?: string;
+  quotation?: string;            // <- campo Cotización
   deliverycertificate?: string;
   state?: string;
   bill?: string;
@@ -33,17 +32,59 @@ export default function ReportsPage() {
   const [selectedPoint, setSelectedPoint] = useState('all');
   const [selectedState, setSelectedState] = useState('all');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const reportsPerPage = 10;
+  const reportsPerPage = 5;
   const db = getFirestore();
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [editReport, setEditReport] = useState<Report | null>(null);
   const [showModal, setShowModal] = useState(false);
 
+  // ---- helpers ----
+  const formatReportDate = (val: string | { seconds: number } | undefined) => {
+    if (!val) return '-';
+    try {
+      if (typeof val === 'string') {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? val : d.toLocaleDateString('es-CO');
+      }
+      if (typeof val === 'object' && 'seconds' in val && typeof val.seconds === 'number') {
+        return new Date(val.seconds * 1000).toLocaleDateString('es-CO');
+      }
+    } catch {}
+    return '-';
+  };
+
+  // Devuelve la primera URL válida encontrada en el texto (http/https o www.)
+  const extractFirstUrl = (text?: string | null) => {
+    if (!text) return null;
+    const match = text.match(/(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
+    if (!match) return null;
+    const raw = match[1];
+    return raw.startsWith('http') ? raw : `https://${raw}`;
+  };
+
+  // Renderiza la celda de Cotización como link si corresponde
+  const QuotationCell = ({ value }: { value?: string }) => {
+    const url = extractFirstUrl(value);
+    if (!url) return <>{value || '-'}</>;
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}     // <- evita abrir el modal al hacer click
+        className="text-blue-600 underline hover:text-blue-700 break-all"
+        title={url}
+      >
+        {url}
+      </a>
+    );
+  };
+
   useEffect(() => {
     const checkRoleAndFetchReports = async () => {
       if (!user) return;
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userRole = userDoc.exists() ? userDoc.data().role : null;
+      const userRole = userDoc.exists() ? (userDoc.data() as any).role : null;
       if (!userRole) {
         await signOut(auth);
         router.push('/login');
@@ -51,12 +92,10 @@ export default function ReportsPage() {
       }
       setRoleChecked(true);
       const reportsSnapshot = await getDocs(collection(db, 'reports'));
-      const reportsList = reportsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
+      const reportsList = reportsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Report));
       setReports(reportsList);
     };
-    if (!loading && user) {
-      checkRoleAndFetchReports();
-    }
+    if (!loading && user) checkRoleAndFetchReports();
   }, [user, loading, db, router]);
 
   const uniquePoints = useMemo(
@@ -70,20 +109,20 @@ export default function ReportsPage() {
 
   const filteredReports = useMemo(() => {
     let filtered = reports;
-    if (selectedPoint !== 'all') {
-      filtered = filtered.filter(r => r.pointofsell === selectedPoint);
-    }
-    if (selectedState !== 'all') {
-      filtered = filtered.filter(r => r.state === selectedState);
-    }
+    if (selectedPoint !== 'all') filtered = filtered.filter(r => r.pointofsell === selectedPoint);
+    if (selectedState !== 'all') filtered = filtered.filter(r => r.state === selectedState);
+
+    const getDateValue = (val: string | { seconds: number } | undefined) => {
+      if (!val) return 0;
+      if (typeof val === 'string') {
+        const t = new Date(val).getTime();
+        return isNaN(t) ? 0 : t;
+      }
+      if (typeof val === 'object' && 'seconds' in val) return val.seconds * 1000;
+      return 0;
+    };
+
     return filtered.slice().sort((a, b) => {
-      // Handle Firestore Timestamp or string date
-      const getDateValue = (val: string | { seconds: number } | undefined) => {
-        if (!val) return 0;
-        if (typeof val === 'string') return new Date(val).getTime();
-        if (typeof val === 'object' && 'seconds' in val) return val.seconds * 1000;
-        return 0;
-      };
       const aTime = getDateValue(a.reportdate);
       const bTime = getDateValue(b.reportdate);
       return sortOrder === 'asc' ? aTime - bTime : bTime - aTime;
@@ -91,9 +130,14 @@ export default function ReportsPage() {
   }, [reports, selectedPoint, selectedState, sortOrder]);
 
   const totalPages = Math.ceil(filteredReports.length / reportsPerPage);
-  const paginatedReports = useMemo(() => {
-    return filteredReports.slice((currentPage - 1) * reportsPerPage, currentPage * reportsPerPage);
-  }, [filteredReports, currentPage]);
+  const paginatedReports = useMemo(
+    () => filteredReports.slice((currentPage - 1) * reportsPerPage, currentPage * reportsPerPage),
+    [filteredReports, currentPage, reportsPerPage]
+  );
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(1);
+  }, [filteredReports, totalPages, currentPage]);
 
   if (loading || !roleChecked) return null;
 
@@ -117,8 +161,7 @@ export default function ReportsPage() {
       <div className="flex flex-wrap gap-4 z-10 w-full max-w-6xl justify-start mt-6 mb-2">
         <button
           onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-          className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold transition text-center h-auto"
-          style={{ height: 'auto', minHeight: 'unset' }}
+          className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold transition text-center"
         >
           Ordenar por Fecha: {sortOrder === 'asc' ? 'Más antiguos' : 'Más recientes'}
         </button>
@@ -126,24 +169,26 @@ export default function ReportsPage() {
         <select
           value={selectedPoint}
           onChange={e => setSelectedPoint(e.target.value)}
-          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none h-auto"
-          style={{ height: 'auto', minHeight: 'unset' }}
+          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
         >
           <option value="all">Todos los Puntos de Venta</option>
           {uniquePoints.map(point => (
-            <option key={point as string} value={point as string}>{point as string}</option>
+            <option key={point as string} value={point as string}>
+              {point as string}
+            </option>
           ))}
         </select>
 
         <select
           value={selectedState}
           onChange={e => setSelectedState(e.target.value)}
-          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none h-auto"
-          style={{ height: 'auto', minHeight: 'unset' }}
+          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
         >
           <option value="all">Todos los Estados</option>
           {uniqueStates.map(state => (
-            <option key={state as string} value={state as string}>{state as string}</option>
+            <option key={state as string} value={state as string}>
+              {state as string}
+            </option>
           ))}
         </select>
       </div>
@@ -152,10 +197,7 @@ export default function ReportsPage() {
         <div className="flex-grow overflow-auto">
           <div
             className="overflow-x-auto scrollbar-hide cursor-grab"
-            style={{
-              WebkitOverflowScrolling: 'touch',
-              scrollSnapType: 'x mandatory',
-            }}
+            style={{ WebkitOverflowScrolling: 'touch', scrollSnapType: 'x mandatory' }}
             onWheel={e => {
               if (e.deltaY !== 0) {
                 e.currentTarget.scrollLeft += e.deltaY;
@@ -186,23 +228,30 @@ export default function ReportsPage() {
                     className="border-t border-gray-200 hover:bg-blue-100 cursor-pointer transition"
                     onClick={() => {
                       setSelectedReport(report);
-                      setEditReport({ ...report }); // clone for editing
+                      setEditReport({ ...report });
                       setShowModal(true);
                     }}
                   >
-                    <td className="px-2 py-1 min-w-[120px]">{report.request || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px]">{report.number || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px]">{/* ...date logic... */}</td>
-                    <td className="px-2 py-1 min-w-[180px]">
+                    <td className="px-2 py-1 min-w-[120px] text-center">{report.request || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px] text-center">{report.number || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px] text-center whitespace-nowrap">
+                      {formatReportDate(report.reportdate)}
+                    </td>
+                    <td className="px-2 py-1 min-w-[180px] text-center">
                       <div className="h-12 overflow-y-auto">{report.description || '-'}</div>
                     </td>
-                    <td className="px-2 py-1 min-w-[120px]">{report.pointofsell || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px]">{report.quotation || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px]">{report.deliverycertificate || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px]">{report.state || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px]">{report.bill || '-'}</td>
-                    <td className="px-2 py-1 min-w-[150px]">{report.servicename || '-'}</td>
-                    <td className="px-2 py-1 min-w-[180px]">{report.servicedescription || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px] text-center">{report.pointofsell || '-'}</td>
+
+                    {/* Cotización con link clickeable si detecta URL */}
+                    <td className="px-2 py-1 min-w-[120px] text-center">
+                      <QuotationCell value={report.quotation} />
+                    </td>
+
+                    <td className="px-2 py-1 min-w-[120px] text-center">{report.deliverycertificate || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px] text-center">{report.state || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px] text-center">{report.bill || '-'}</td>
+                    <td className="px-2 py-1 min-w-[150px] text-center">{report.servicename || '-'}</td>
+                    <td className="px-2 py-1 min-w-[180px] text-center">{report.servicedescription || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -221,24 +270,20 @@ export default function ReportsPage() {
             </button>
 
             {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(page =>
-                page === 1 ||
-                page === totalPages ||
-                Math.abs(page - currentPage) <= 2
-              )
+              .filter(page => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 2)
               .map((page, idx, arr) => {
                 const prev = arr[idx - 1];
                 const showEllipsis = prev && page - prev > 1;
-
                 return (
                   <span key={page} className="flex items-center">
                     {showEllipsis && <span className="px-1">...</span>}
                     <button
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded cursor-pointer text-black ${currentPage === page
+                      className={`px-3 py-1 rounded cursor-pointer text-black ${
+                        currentPage === page
                           ? 'bg-blue-600 text-white font-bold'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
+                      }`}
                     >
                       {page}
                     </button>
@@ -265,47 +310,23 @@ export default function ReportsPage() {
         )}
       </div>
 
+      {/* Modal Detalles */}
       {showModal && selectedReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
             <h2 className="text-xl font-semibold mb-4 text-black">Detalles del Reporte</h2>
             <div className="grid grid-cols-2 gap-4 text-black">
-              <div>
-                <strong>Solicitud/Aviso:</strong> {selectedReport.request || '-'}
-              </div>
-              <div>
-                <strong>Presupuesto:</strong> {selectedReport.number || '-'}
-              </div>
-              <div>
-                <strong>Fecha de Reporte:</strong> 
-                {typeof selectedReport.reportdate === 'object' && selectedReport.reportdate && 'seconds' in selectedReport.reportdate
-                  ? new Date(selectedReport.reportdate.seconds * 1000).toLocaleDateString('es-CO')
-                  : selectedReport.reportdate || '-'}
-              </div>
-              <div>
-                <strong>Descripción:</strong> {selectedReport.description || '-'}
-              </div>
-              <div>
-                <strong>Punto de Venta:</strong> {selectedReport.pointofsell || '-'}
-              </div>
-              <div>
-                <strong>Cotización:</strong> {selectedReport.quotation || '-'}
-              </div>
-              <div>
-                <strong>Acta de Entrega:</strong> {selectedReport.deliverycertificate || '-'}
-              </div>
-              <div>
-                <strong>Estado:</strong> {selectedReport.state || '-'}
-              </div>
-              <div>
-                <strong>Factura:</strong> {selectedReport.bill || '-'}
-              </div>
-              <div>
-                <strong>Nombre del Servicio:</strong> {selectedReport.servicename || '-'}
-              </div>
-              <div>
-                <strong>Descripción del Servicio:</strong> {selectedReport.servicedescription || '-'}
-              </div>
+              <div><strong>Solicitud/Aviso:</strong> {selectedReport.request || '-'}</div>
+              <div><strong>Presupuesto:</strong> {selectedReport.number || '-'}</div>
+              <div><strong>Fecha de Reporte:</strong> {formatReportDate(selectedReport.reportdate)}</div>
+              <div><strong>Descripción:</strong> {selectedReport.description || '-'}</div>
+              <div><strong>Punto de Venta:</strong> {selectedReport.pointofsell || '-'}</div>
+              <div><strong>Cotización:</strong> <QuotationCell value={selectedReport.quotation} /></div>
+              <div><strong>Acta de Entrega:</strong> {selectedReport.deliverycertificate || '-'}</div>
+              <div><strong>Estado:</strong> {selectedReport.state || '-'}</div>
+              <div><strong>Factura:</strong> {selectedReport.bill || '-'}</div>
+              <div><strong>Nombre del Servicio:</strong> {selectedReport.servicename || '-'}</div>
+              <div><strong>Descripción del Servicio:</strong> {selectedReport.servicedescription || '-'}</div>
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
@@ -320,6 +341,7 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {/* Modal Editar */}
       {showModal && selectedReport && editReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
@@ -349,9 +371,11 @@ export default function ReportsPage() {
                     type="date"
                     className="w-full border rounded p-1 mt-1"
                     value={
-                      typeof editReport.reportdate === 'object' && editReport.reportdate && 'seconds' in editReport.reportdate
+                      typeof editReport.reportdate === 'object' &&
+                      editReport.reportdate &&
+                      'seconds' in editReport.reportdate
                         ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
-                        : editReport.reportdate || ''
+                        : (editReport.reportdate as string) || ''
                     }
                     onChange={e => setEditReport({ ...editReport, reportdate: e.target.value })}
                   />
@@ -457,8 +481,6 @@ export default function ReportsPage() {
                   });
                   if (res.ok) {
                     setShowModal(false);
-
-                    // Show success div with countdown
                     let seconds = 2;
                     const successDiv = document.createElement('div');
                     successDiv.className =
@@ -471,8 +493,6 @@ export default function ReportsPage() {
     `;
                     document.body.appendChild(successDiv);
                     setTimeout(() => successDiv.classList.add('opacity-100'), 10);
-
-                    // Countdown logic
                     const countdownInterval = setInterval(() => {
                       seconds -= 1;
                       const countdownSpan = successDiv.querySelector('#countdown');
