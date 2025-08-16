@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
@@ -14,27 +14,50 @@ interface Report {
   reportdate?: string | { seconds: number };
   description?: string;
   pointofsell?: string;
-  quotation?: string;            // <- campo Cotización
+  quotation?: string;
   deliverycertificate?: string;
   state?: string;
   bill?: string;
   servicename?: string;
   servicedescription?: string;
+  asesorias?: string;
   [key: string]: unknown;
 }
 
 type UserDocData = { role?: string };
+
+type FilterField =
+  | 'request'
+  | 'number'
+  | 'reportdate'
+  | 'description'
+  | 'pointofsell'
+  | 'quotation'
+  | 'deliverycertificate'
+  | 'state'
+  | 'bill'
+  | 'servicename'
+  | 'servicedescription'
+  | 'asesorias';
 
 export default function ReportsPage() {
   const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
   const [user, loading] = useAuthState(auth);
   const [roleChecked, setRoleChecked] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedPoint, setSelectedPoint] = useState('all');
-  const [selectedState, setSelectedState] = useState('all');
+
+  // Orden y paginación
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const reportsPerPage = 5;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Filtros
+  const [filterField, setFilterField] = useState<FilterField | ''>('');
+  const [filterValue, setFilterValue] = useState<string>(''); // usado solo para pointofsell/state
+
+  // Caja de texto para búsqueda en campos de texto
+  const [textQuery, setTextQuery] = useState<string>('');
+
   const db = getFirestore();
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [editReport, setEditReport] = useState<Report | null>(null);
@@ -55,7 +78,23 @@ export default function ReportsPage() {
     return '-';
   };
 
-  // Devuelve la primera URL válida encontrada en el texto (http/https o www.)
+  const getDateValue = (val: string | { seconds: number } | undefined) => {
+    if (!val) return NaN;
+    if (typeof val === 'string') {
+      const t = new Date(val).getTime();
+      return isNaN(t) ? NaN : t;
+    }
+    if (typeof val === 'object' && 'seconds' in val) return val.seconds * 1000;
+    return NaN;
+  };
+
+  const coerceNumber = (raw?: string) => {
+    if (!raw) return NaN;
+    const m = raw.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
+    return m ? Number(m[0]) : NaN;
+  };
+
+  // URL helper
   const extractFirstUrl = (text?: string | null): string | null => {
     if (!text) return null;
     const match = text.match(/(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
@@ -64,8 +103,7 @@ export default function ReportsPage() {
     return raw.startsWith('http') ? raw : `https://${raw}`;
   };
 
-  // Renderiza la celda de Cotización como link si corresponde
-  const QuotationCell = ({ value }: { value?: string }) => {
+  const LinkCell = ({ value }: { value?: string }) => {
     const url = extractFirstUrl(value);
     if (!url) return <>{value || '-'}</>;
     return (
@@ -73,7 +111,7 @@ export default function ReportsPage() {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}     // <- evita abrir el modal al hacer click
+        onClick={(e) => e.stopPropagation()}
         className="text-blue-600 underline hover:text-blue-700 break-all"
         title={url}
       >
@@ -107,35 +145,150 @@ export default function ReportsPage() {
   }, [user, loading, db, router]);
 
   const uniquePoints = useMemo(
-    () => Array.from(new Set(reports.map(r => r.pointofsell).filter(Boolean))),
+    () => Array.from(new Set(reports.map(r => r.pointofsell).filter(Boolean))) as string[],
     [reports]
   );
   const uniqueStates = useMemo(
-    () => Array.from(new Set(reports.map(r => r.state).filter(Boolean))),
+    () => Array.from(new Set(reports.map(r => r.state).filter(Boolean))) as string[],
     [reports]
   );
 
+  // Campo a usar para ordenar; por defecto fecha
+  const sortKey: FilterField = (filterField || 'reportdate') as FilterField;
+
+  const isNumericKey = (k: FilterField) => k === 'request' || k === 'number' || k === 'bill';
+  const isDateKey = (k: FilterField) => k === 'reportdate';
+
+  // ¿El campo seleccionado es textual para habilitar la caja de búsqueda?
+  const isTextualFieldSelected =
+    filterField === 'description' ||
+    filterField === 'servicename' ||
+    filterField === 'servicedescription' ||
+    filterField === 'asesorias';
+
+  // Campo objetivo de la búsqueda de texto (incluye asesorías)
+  const textTarget: 'description' | 'servicename' | 'servicedescription' | 'asesorias' =
+    filterField === 'servicename'
+      ? 'servicename'
+      : filterField === 'servicedescription'
+      ? 'servicedescription'
+      : filterField === 'asesorias'
+      ? 'asesorias'
+      : 'description';
+
+  // Placeholder dinámico
+  const textPlaceholder = isTextualFieldSelected
+    ? textTarget === 'servicename'
+      ? 'Buscar en nombre del servicio...'
+      : textTarget === 'servicedescription'
+      ? 'Buscar en descripción del servicio...'
+      : textTarget === 'asesorias'
+      ? 'Buscar en asesorías...'
+      : 'Buscar en descripción...'
+    : "Selecciona 'Descripción', 'Nombre del Servicio', 'Descripción del Servicio' o 'Asesorías' para buscar";
+
+  // Si cambia a un campo NO textual, limpamos el query
+  useEffect(() => {
+    if (!isTextualFieldSelected && textQuery) setTextQuery('');
+  }, [isTextualFieldSelected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const FIELD_LABELS: Record<FilterField, string> = {
+    request: 'Solicitud/Aviso',
+    number: 'Presupuesto',
+    reportdate: 'Fecha',
+    description: 'Descripción',
+    pointofsell: 'Punto de Venta',
+    quotation: 'Cotización',
+    deliverycertificate: 'Acta de Entrega',
+    state: 'Estado',
+    bill: 'Factura',
+    servicename: 'Nombre del Servicio',
+    servicedescription: 'Descripción del Servicio',
+    asesorias: 'Asesorías',
+  };
+
+  const sortDescription = useMemo(() => {
+    if (isDateKey(sortKey)) {
+      return sortOrder === 'desc' ? 'Más recientes' : 'Más antiguos';
+    }
+    if (isNumericKey(sortKey)) {
+      return sortOrder === 'desc' ? 'Mayor a menor' : 'Menor a mayor';
+    }
+    return sortOrder === 'desc' ? 'Z → A' : 'A → Z';
+  }, [sortKey, sortOrder]);
+
+  // Filtrado + orden
   const filteredReports = useMemo(() => {
     let filtered = reports;
-    if (selectedPoint !== 'all') filtered = filtered.filter(r => r.pointofsell === selectedPoint);
-    if (selectedState !== 'all') filtered = filtered.filter(r => r.state === selectedState);
 
-    const getDateValue = (val: string | { seconds: number } | undefined) => {
-      if (!val) return 0;
-      if (typeof val === 'string') {
-        const t = new Date(val).getTime();
-        return isNaN(t) ? 0 : t;
-      }
-      if (typeof val === 'object' && 'seconds' in val) return val.seconds * 1000;
-      return 0;
+    // Filtro secundario SOLO para pointofsell/state
+    if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
+      filtered = filtered.filter(r => r.pointofsell === filterValue);
+    }
+    if (filterField === 'state' && filterValue && filterValue !== 'all') {
+      filtered = filtered.filter(r => r.state === filterValue);
+    }
+
+    // Búsqueda textual SOLO si el campo textual está seleccionado
+    if (isTextualFieldSelected && textQuery.trim()) {
+      const q = textQuery.toLowerCase();
+      filtered = filtered.filter(r => String(r[textTarget] ?? '').toLowerCase().includes(q));
+    }
+
+    // Orden
+    const asc = sortOrder === 'asc';
+
+    const cmpDate = (a: Report, b: Report) => {
+      const av = getDateValue(a.reportdate);
+      const bv = getDateValue(b.reportdate);
+      const aMiss = isNaN(av);
+      const bMiss = isNaN(bv);
+      if (aMiss && bMiss) return 0;
+      if (aMiss) return 1;
+      if (bMiss) return -1;
+      return asc ? av - bv : bv - av;
     };
 
-    return filtered.slice().sort((a, b) => {
-      const aTime = getDateValue(a.reportdate);
-      const bTime = getDateValue(b.reportdate);
-      return sortOrder === 'asc' ? aTime - bTime : bTime - aTime;
+    const cmpNumber = (a: Report, b: Report, key: 'request' | 'number' | 'bill') => {
+      const av = coerceNumber(String(a[key] ?? ''));
+      const bv = coerceNumber(String(b[key] ?? ''));
+      const aMiss = isNaN(av);
+      const bMiss = isNaN(bv);
+      if (aMiss && bMiss) return 0;
+      if (aMiss) return 1;
+      if (bMiss) return -1;
+      return asc ? av - bv : bv - av;
+    };
+
+    const cmpString = (a: Report, b: Report, key: Exclude<FilterField, 'reportdate' | 'request' | 'number'>) => {
+      const av = String(a[key] ?? '').toLowerCase();
+      const bv = String(b[key] ?? '').toLowerCase();
+      const aMiss = av === '';
+      const bMiss = bv === '';
+      if (aMiss && bMiss) return 0;
+      if (aMiss) return 1;
+      if (bMiss) return -1;
+      const base = av.localeCompare(bv, 'es', { sensitivity: 'base' });
+      return asc ? base : -base;
+    };
+
+    const sorted = filtered.slice().sort((a, b) => {
+      if (isDateKey(sortKey)) return cmpDate(a, b);
+      if (isNumericKey(sortKey)) return cmpNumber(a, b, sortKey as 'request' | 'number' | 'bill');
+      return cmpString(a, b, sortKey as Exclude<FilterField, 'reportdate' | 'request' | 'number'>);
     });
-  }, [reports, selectedPoint, selectedState, sortOrder]);
+
+    return sorted;
+  }, [
+    reports,
+    filterField,
+    filterValue,
+    isTextualFieldSelected,
+    textQuery,
+    textTarget,
+    sortKey,
+    sortOrder,
+  ]);
 
   const totalPages = Math.ceil(filteredReports.length / reportsPerPage);
   const paginatedReports = useMemo(
@@ -146,6 +299,21 @@ export default function ReportsPage() {
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(1);
   }, [filteredReports, totalPages, currentPage]);
+
+  const COLS = [
+    { key: 'request',            label: 'Solicitud/Aviso',           className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'number',             label: 'Presupuesto',               className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'reportdate',         label: 'Fecha de Reporte',          className: 'px-2 py-1 text-center min-w-[120px] whitespace-nowrap' },
+    { key: 'description',        label: 'Descripción',               className: 'px-2 py-1 text-center min-w-[180px]' },
+    { key: 'pointofsell',        label: 'Punto de Venta',            className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'quotation',          label: 'Cotización',                className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'deliverycertificate',label: 'Acta de Entrega',           className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'state',              label: 'Estado',                    className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'bill',               label: 'Factura',                   className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'servicename',        label: 'Nombre del Servicio',       className: 'px-2 py-1 text-center min-w-[150px]' },
+    { key: 'servicedescription', label: 'Descripción del Servicio',  className: 'px-2 py-1 text-center min-w-[180px]' },
+    { key: 'asesorias',          label: 'Asesorías',                 className: 'px-2 py-1 text-center min-w-[180px]' },
+  ] as const;
 
   if (loading || !roleChecked) return null;
 
@@ -166,41 +334,85 @@ export default function ReportsPage() {
         <p className="text-white/80 text-sm">Todos los reportes</p>
       </div>
 
-      <div className="flex flex-wrap gap-4 z-10 w-full max-w-6xl justify-start mt-6 mb-2">
+      {/* Controles */}
+      <div className="flex flex-wrap items-center gap-3 z-10 w-full max-w-6xl justify-start mt-6 mb-2">
+        {/* Botón que ordena según el campo seleccionado */}
         <button
           onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
           className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold transition text-center"
         >
-          Ordenar por Fecha: {sortOrder === 'asc' ? 'Más antiguos' : 'Más recientes'}
+          Ordenar por {filterField ? FIELD_LABELS[sortKey] : 'Fecha'}: {sortDescription}
         </button>
 
+        {/* Selector de campo principal */}
         <select
-          value={selectedPoint}
-          onChange={e => setSelectedPoint(e.target.value)}
+          value={filterField}
+          onChange={(e) => {
+            const f = e.target.value as FilterField | '';
+            setFilterField(f);
+            setFilterValue('');
+            setCurrentPage(1);
+          }}
           className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
         >
-          <option value="all">Todos los Puntos de Venta</option>
-          {uniquePoints.map(point => (
-            <option key={point as string} value={point as string}>
-              {point as string}
-            </option>
+          <option value="">Seleccionar campo</option>
+          {(
+            [
+              'request',
+              'number',
+              'reportdate',
+              'description',
+              'pointofsell',
+              'quotation',
+              'deliverycertificate',
+              'state',
+              'bill',
+              'servicename',
+              'servicedescription',
+              'asesorias',
+            ] as FilterField[]
+          ).map(f => (
+            <option key={f} value={f}>{FIELD_LABELS[f]}</option>
           ))}
         </select>
 
-        <select
-          value={selectedState}
-          onChange={e => setSelectedState(e.target.value)}
-          className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
-        >
-          <option value="all">Todos los Estados</option>
-          {uniqueStates.map(state => (
-            <option key={state as string} value={state as string}>
-              {state as string}
-            </option>
-          ))}
-        </select>
+        {/* Control secundario SOLO para punto de venta y estado */}
+        {filterField === 'pointofsell' && (
+          <select
+            value={filterValue || 'all'}
+            onChange={(e) => { setFilterValue(e.target.value); setCurrentPage(1); }}
+            className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
+          >
+            <option value="all">Todos</option>
+            {uniquePoints.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        )}
+
+        {filterField === 'state' && (
+          <select
+            value={filterValue || 'all'}
+            onChange={(e) => { setFilterValue(e.target.value); setCurrentPage(1); }}
+            className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
+          >
+            <option value="all">Todos</option>
+            {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+
+        {/* Búsqueda textual dinámica (deshabilitada si el campo no es textual) */}
+        <input
+          type="text"
+          value={textQuery}
+          onChange={(e) => { setTextQuery(e.target.value); setCurrentPage(1); }}
+          placeholder={textPlaceholder}
+          disabled={!isTextualFieldSelected}
+          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${
+            !isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        />
       </div>
 
+      {/* Tabla */}
       <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[420px] flex flex-col justify-between">
         <div className="flex-grow overflow-auto">
           <div
@@ -213,55 +425,48 @@ export default function ReportsPage() {
               }
             }}
           >
-            <table className="min-w-[1200px] table-auto border-collapse text-sm text-gray-800">
+            <table className="min-w-[1400px] table-auto border-collapse text-sm text-gray-800">
               <thead className="bg-gray-100 text-gray-700">
                 <tr>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Solicitud/Aviso</th>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Presupuesto</th>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Fecha de Reporte</th>
-                  <th className="px-2 py-1 text-center min-w-[180px]">Descripción</th>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Punto de Venta</th>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Cotización</th>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Acta de Entrega</th>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Estado</th>
-                  <th className="px-2 py-1 text-center min-w-[120px]">Factura</th>
-                  <th className="px-2 py-1 text-center min-w-[150px]">Nombre del Servicio</th>
-                  <th className="px-2 py-1 text-center min-w-[180px]">Descripción del Servicio</th>
+                  {COLS.map(c => (
+                    <th key={c.key} className={c.className}>{c.label}</th>
+                  ))}
                 </tr>
               </thead>
+
               <tbody>
-                {paginatedReports.map(report => (
-                  <tr
-                    key={report.id}
-                    className="border-t border-gray-200 hover:bg-blue-100 cursor-pointer transition"
-                    onClick={() => {
-                      setSelectedReport(report);
-                      setEditReport({ ...report });
-                      setShowModal(true);
-                    }}
-                  >
-                    <td className="px-2 py-1 min-w-[120px] text-center">{report.request || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px] text-center">{report.number || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px] text-center whitespace-nowrap">
-                      {formatReportDate(report.reportdate)}
-                    </td>
-                    <td className="px-2 py-1 min-w-[180px] text-center">
-                      <div className="h-12 overflow-y-auto">{report.description || '-'}</div>
-                    </td>
-                    <td className="px-2 py-1 min-w-[120px] text-center">{report.pointofsell || '-'}</td>
+                {paginatedReports.map(report => {
+                  const rowCells: ReactNode[] = [
+                    report.request || '-',
+                    report.number || '-',
+                    formatReportDate(report.reportdate),
+                    <div className="h-12 overflow-y-auto" key="desc">{report.description || '-'}</div>,
+                    report.pointofsell || '-',
+                    <LinkCell value={report.quotation} key="quotation" />,
+                    report.deliverycertificate || '-',
+                    report.state || '-',
+                    report.bill || '-',
+                    report.servicename || '-',
+                    report.servicedescription || '-',
+                    <LinkCell value={report.asesorias} key="asesorias" />,
+                  ];
 
-                    {/* Cotización con link clickeable si detecta URL */}
-                    <td className="px-2 py-1 min-w-[120px] text-center">
-                      <QuotationCell value={report.quotation} />
-                    </td>
-
-                    <td className="px-2 py-1 min-w-[120px] text-center">{report.deliverycertificate || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px] text-center">{report.state || '-'}</td>
-                    <td className="px-2 py-1 min-w-[120px] text-center">{report.bill || '-'}</td>
-                    <td className="px-2 py-1 min-w-[150px] text-center">{report.servicename || '-'}</td>
-                    <td className="px-2 py-1 min-w-[180px] text-center">{report.servicedescription || '-'}</td>
-                  </tr>
-                ))}
+                  return (
+                    <tr
+                      key={report.id}
+                      className="border-t border-gray-200 hover:bg-blue-100 cursor-pointer transition"
+                      onClick={() => {
+                        setSelectedReport(report);
+                        setEditReport({ ...report });
+                        setShowModal(true);
+                      }}
+                    >
+                      {rowCells.map((content, i) => (
+                        <td key={i} className={COLS[i].className}>{content}</td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -329,12 +534,13 @@ export default function ReportsPage() {
               <div><strong>Fecha de Reporte:</strong> {formatReportDate(selectedReport.reportdate)}</div>
               <div><strong>Descripción:</strong> {selectedReport.description || '-'}</div>
               <div><strong>Punto de Venta:</strong> {selectedReport.pointofsell || '-'}</div>
-              <div><strong>Cotización:</strong> <QuotationCell value={selectedReport.quotation} /></div>
+              <div><strong>Cotización:</strong> <LinkCell value={selectedReport.quotation} /></div>
               <div><strong>Acta de Entrega:</strong> {selectedReport.deliverycertificate || '-'}</div>
               <div><strong>Estado:</strong> {selectedReport.state || '-'}</div>
               <div><strong>Factura:</strong> {selectedReport.bill || '-'}</div>
               <div><strong>Nombre del Servicio:</strong> {selectedReport.servicename || '-'}</div>
               <div><strong>Descripción del Servicio:</strong> {selectedReport.servicedescription || '-'}</div>
+              <div><strong>Asesorías:</strong> <LinkCell value={selectedReport.asesorias} /></div>
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
@@ -355,7 +561,7 @@ export default function ReportsPage() {
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
             <h2 className="text-xl font-semibold mb-4 text-black">Editar Reporte</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-black">
-              {/* Column 1 */}
+              {/* Columna 1 */}
               <div className="flex flex-col gap-2">
                 <div>
                   <strong>Solicitud/Aviso:</strong>
@@ -397,7 +603,7 @@ export default function ReportsPage() {
                   />
                 </div>
               </div>
-              {/* Column 2 */}
+              {/* Columna 2 */}
               <div className="flex flex-col gap-2">
                 <div>
                   <strong>Punto de Venta:</strong>
@@ -432,7 +638,7 @@ export default function ReportsPage() {
                   />
                 </div>
               </div>
-              {/* Column 3 */}
+              {/* Columna 3 */}
               <div className="flex flex-col gap-2">
                 <div>
                   <strong>Estado:</strong>
@@ -465,6 +671,15 @@ export default function ReportsPage() {
                     className="w-full border rounded p-1 mt-1"
                     value={editReport.servicedescription || ''}
                     onChange={e => setEditReport({ ...editReport, servicedescription: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Asesorías:</strong>
+                  <textarea
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.asesorias || ''}
+                    onChange={e => setEditReport({ ...editReport, asesorias: e.target.value })}
+                    placeholder="Detalle, link o nota de asesorías"
                   />
                 </div>
               </div>

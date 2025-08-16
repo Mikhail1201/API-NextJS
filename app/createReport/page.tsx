@@ -17,6 +17,7 @@ type FormField =
   | 'deliverycertificate'
   | 'state'
   | 'bill'
+  | 'asesorias'            // <- NUEVO (se queda igual, solo se movió de columna)
   | 'servicename'
   | 'servicedescription';
 
@@ -37,6 +38,7 @@ export default function CreateReportPage() {
     deliverycertificate: '',
     state: '',
     bill: '',
+    asesorias: '',            // <- en el estado
     servicename: '',
     servicedescription: '',
   });
@@ -109,6 +111,7 @@ export default function CreateReportPage() {
         deliverycertificate: '',
         state: '',
         bill: '',
+        asesorias: '',
         servicename: '',
         servicedescription: '',
       });
@@ -160,7 +163,7 @@ export default function CreateReportPage() {
               className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 text-sm"
               onSubmit={handleSubmit}
             >
-              {/* Column 1 */}
+              {/* Columna 1 (4 filas) */}
               <div className="flex flex-col gap-2">
                 <div className="flex flex-col">
                   <label className="text-gray-700 mb-1 text-sm font-medium">Solicitud/Aviso</label>
@@ -200,12 +203,12 @@ export default function CreateReportPage() {
                     className="p-2 rounded-md border border-gray-300 text-sm text-black resize-none"
                     value={formData.description}
                     onChange={handleChange}
-                    rows={2}
+                    rows={1}
                   />
                 </div>
               </div>
 
-              {/* Column 2 */}
+              {/* Columna 2 (4 filas) */}
               <div className="flex flex-col gap-2">
                 <div className="flex flex-col">
                   <label className="text-gray-700 mb-1 text-sm font-medium">Punto de Venta</label>
@@ -258,7 +261,7 @@ export default function CreateReportPage() {
                 </div>
               </div>
 
-              {/* Column 3 */}
+              {/* Columna 3 (4 filas) — movimos ASESORÍAS aquí */}
               <div className="flex flex-col gap-2">
                 <div className="flex flex-col">
                   <label className="text-gray-700 mb-1 text-sm font-medium">Estado</label>
@@ -297,7 +300,19 @@ export default function CreateReportPage() {
                     className="p-2 rounded-md border border-gray-300 text-sm text-black resize-none"
                     value={formData.servicedescription}
                     onChange={handleChange}
-                    rows={2}
+                    rows={1}
+                  />
+                </div>
+                {/* ASESORÍAS aquí para completar 4 filas */}
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Asesorías</label>
+                  <textarea
+                    name="asesorias"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black resize-none"
+                    value={formData.asesorias}
+                    onChange={handleChange}
+                    rows={1}
+                    placeholder="Detalle, link o nota de asesorías"
                   />
                 </div>
               </div>
