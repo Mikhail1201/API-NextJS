@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
@@ -101,9 +101,8 @@ function mix(hex1: string, hex2: string, weight: number) {
 function lighten(hex: string, amount: number) {
   return mix(hex, '#ffffff', amount);
 }
-function darken(hex: string, amount: number) {
-  return mix(hex, '#000000', amount);
-}
+
+// (Eliminado darken: no se usaba)
 
 function getContrastText(hex: string) {
   const rgb = hexToRgb(hex);
@@ -288,14 +287,14 @@ export default function ReportsPage() {
   );
 
   /* ---------- Derivar estilos ---------- */
-  const derivedForKey = (k: BaseStateKey) => deriveStylesFromBase(stateBaseColors[k]);
-
   const derivedStylesMap = useMemo(() => {
-    const m: Record<BaseStateKey, ReturnType<typeof deriveStylesFromBase>> = {} as any;
-    (KNOWN_STATES as readonly BaseStateKey[]).forEach((k) => {
-      m[k] = derivedForKey(k);
-    });
-    return m;
+    return (KNOWN_STATES as readonly BaseStateKey[]).reduce(
+      (acc, k) => {
+        acc[k] = deriveStylesFromBase(stateBaseColors[k]);
+        return acc;
+      },
+      {} as Record<BaseStateKey, ReturnType<typeof deriveStylesFromBase>>
+    );
   }, [stateBaseColors]);
 
   const styleForStateValue = (raw?: string) => {
@@ -345,7 +344,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     if (!isTextualFieldSelected && textQuery) setTextQuery('');
-  }, [isTextualFieldSelected]);
+  }, [isTextualFieldSelected, textQuery]); // <-- añadimos textQuery
 
   const FIELD_LABELS: Record<FilterField, string> = {
     request: 'Solicitud/Aviso',
@@ -468,7 +467,10 @@ export default function ReportsPage() {
 
   if (loading || !roleChecked) return null;
 
-  const filterStateDerived = styleForStateValue(filterValue && filterValue !== 'all' ? filterValue : undefined);
+  // const filterStateDerived = styleForStateValue(filterValue && filterValue !== 'all' ? filterValue : undefined);
+
+  // Tipo seguro para variables CSS personalizadas
+  type RowStyle = CSSProperties & { ['--row-bg']?: string; ['--row-hover']?: string };
 
   return (
     <div className="relative h-screen flex flex-col items-center px-4 py-8 overflow-hidden">
@@ -553,8 +555,8 @@ export default function ReportsPage() {
             onChange={(e) => { setFilterValue(e.target.value); setCurrentPage(1); }}
             className="cursor-pointer p-2 rounded-lg border border-gray-300 appearance-none"
             style={{
-              backgroundColor: filterValue && filterValue !== 'all' ? filterStateDerived.optBg : '#ffffff',
-              color: filterValue && filterValue !== 'all' ? filterStateDerived.optText : '#111827',
+              backgroundColor: filterValue && filterValue !== 'all' ? styleForStateValue(filterValue).optBg : '#ffffff',
+              color: filterValue && filterValue !== 'all' ? styleForStateValue(filterValue).optText : '#111827',
             }}
           >
             <option value="all" style={{ backgroundColor: '#ffffff', color: '#111827' }}>Todos</option>
@@ -632,16 +634,16 @@ export default function ReportsPage() {
                     <LinkCell value={report.asesorias} key="asesorias" />,
                   ];
 
+                  const rowStyle: RowStyle = {
+                    ['--row-bg']: derived.rowBg,
+                    ['--row-hover']: derived.rowHover,
+                  };
+
                   return (
                     <tr
                       key={report.id}
                       className="border-t border-gray-200 cursor-pointer transition state-row"
-                      style={
-                        {
-                          ['--row-bg' as any]: derived.rowBg,
-                          ['--row-hover' as any]: derived.rowHover,
-                        } as React.CSSProperties
-                      }
+                      style={rowStyle}
                       onClick={() => {
                         setSelectedReport(report);
                         setEditReport({ ...report });
@@ -842,8 +844,8 @@ export default function ReportsPage() {
                 <div>
                   <strong>Estado:</strong>
                   {(() => {
-                    const key = pickStateKey(editReport.state) || 'N/A';
-                    const st = derivedStylesMap[key];
+                    const k = pickStateKey(editReport.state) || 'N/A';
+                    const st = derivedStylesMap[k];
                     return (
                       <select
                         className="w-full border rounded p-1 mt-1 h-10"
