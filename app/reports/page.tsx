@@ -253,7 +253,7 @@ export default function ReportsPage() {
       try {
         const idToken = await auth.currentUser?.getIdToken();
         if (idToken) {
-          const res = await fetch('/api/user-prefs', {
+          const res = await fetch('/api/admin-user-prefs', {
             method: 'GET',
             headers: { Authorization: `Bearer ${idToken}` },
           });
