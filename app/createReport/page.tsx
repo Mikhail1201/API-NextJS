@@ -16,7 +16,9 @@ type FormField =
   | 'quotation'
   | 'deliverycertificate'
   | 'state'
-  | 'bill';
+  | 'bill'
+  | 'servicename'
+  | 'servicedescription';
 
 interface PointOfSell {
   id: string;
@@ -35,10 +37,11 @@ export default function CreateReportPage() {
     deliverycertificate: '',
     state: '',
     bill: '',
+    servicename: '',
+    servicedescription: '',
   });
   const [formMode, setFormMode] = useState<'report' | 'pointofsell'>('report');
   const [pointsOfSell, setPointsOfSell] = useState<PointOfSell[]>([]);
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const router = useRouter();
 
   useEffect(() => {
@@ -75,7 +78,7 @@ export default function CreateReportPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -106,8 +109,9 @@ export default function CreateReportPage() {
         deliverycertificate: '',
         state: '',
         bill: '',
+        servicename: '',
+        servicedescription: '',
       });
-      setAttachedFiles([]);
     }
   };
 
@@ -115,20 +119,32 @@ export default function CreateReportPage() {
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center p-4">
-      {/* Form Container */}
-      <div className="z-10 w-full max-w-3xl bg-white p-6 rounded-2xl shadow-xl">
+      {/* Form Container con ancho dinámico */}
+      <div
+        className={`z-10 w-full ${
+          formMode === 'pointofsell' ? 'max-w-md' : 'max-w-3xl'
+        } bg-white p-6 rounded-2xl shadow-xl transition-[max-width] duration-300`}
+      >
         <div className="flex justify-center gap-4 mb-4">
           <button
             type="button"
             onClick={() => setFormMode('report')}
-            className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold transition ${formMode === 'report' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              formMode === 'report'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
           >
             Crear Reporte
           </button>
           <button
             type="button"
             onClick={() => setFormMode('pointofsell')}
-            className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold transition ${formMode === 'pointofsell' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              formMode === 'pointofsell'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
           >
             Agregar Punto de Venta
           </button>
@@ -140,104 +156,153 @@ export default function CreateReportPage() {
               <h1 className="text-2xl font-bold text-gray-800">Crear Reporte</h1>
             </div>
 
-            <form className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm" onSubmit={handleSubmit}>
-              {Object.entries({
-                "Solicitud": "request",
-                "Número": "number",
-                "Fecha de Reporte": "reportdate",
-                "Descripción": "description",
-                "Punto de Venta": "pointofsell",
-                "Cotización": "quotation",
-                "Certificado de Entrega": "deliverycertificate",
-                "Estado": "state",
-                "Factura": "bill"
-              } as Record<string, FormField>).map(([label, field]) => (
-                <div key={label} className="flex flex-col">
-                  <label className="text-gray-700 mb-1 text-sm font-medium">{label}</label>
-                  {(field as FormField) === "state" ? (
-                    <select
-                      name="state"
-                      className="p-2 rounded-md border border-gray-300 text-sm text-black"
-                      required
-                      value={formData.state}
-                      onChange={handleChange}
-                    >
-                      <option value="En Programación">En Programación</option>
-                      <option value="En Espera Aprobación">En Espera Aprobación</option>
-                      <option value="pndte cotización">Pendiente de Cotización</option>
-                      <option value="En Ejecución">En Ejecución</option>
-                      <option value="Ejecutado">Ejecutado</option>
-                      <option value="N/A">N/A</option>
-                    </select>
-                  ) : (field as FormField) === "pointofsell" ? (
-                    <select
-                      name="pointofsell"
-                      className="p-2 rounded-md border border-gray-300 text-sm text-black"
-                      value={formData.pointofsell}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Seleccione un punto de venta</option>
-                      {pointsOfSell.map((pos) => (
-                        <option key={pos.id} value={pos.name}>
-                          {pos.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : field === "description" ? (
-                    <div className="flex flex-col relative">
-                      <textarea
-                        name="description"
-                        className="p-2 pr-10 rounded-md border border-gray-300 text-sm text-black resize-none"
-                        value={formData.description}
-                        onChange={handleChange}
-                        placeholder="Ingrese la descripción"
-                        rows={1}
-                      />
-                      <input
-                        id="file-upload"
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={e => {
-                          if (e.target.files) {
-                            setAttachedFiles(Array.from(e.target.files));
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor="file-upload"
-                        className="absolute right-2 top-2 cursor-pointer flex items-center"
-                        style={{ lineHeight: 0 }}
-                        title="Adjuntar archivo"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 hover:text-blue-700 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l7.071-7.071a4 4 0 00-5.657-5.657l-7.071 7.071a6 6 0 108.485 8.485l6.364-6.364" />
-                        </svg>
-                      </label>
-                      {attachedFiles.length > 0 && (
-                        <span className="text-xs text-gray-700 mt-1">
-                          {attachedFiles.map(file => file.name).join(', ')}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <input
-                      type={field === 'reportdate' ? 'date' : 'text'}
-                      name={field}
-                      className="p-2 rounded-md border border-gray-300 text-sm text-black"
-                      value={formData[field] || ''}
-                      onChange={handleChange}
-                      required={
-                        field === 'reportdate' ||
-                        field === 'state'
-                      }
-                    />
-                  )}
+            <form
+              className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 text-sm"
+              onSubmit={handleSubmit}
+            >
+              {/* Column 1 */}
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Solicitud/Aviso</label>
+                  <input
+                    type="text"
+                    name="request"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    value={formData.request}
+                    onChange={handleChange}
+                  />
                 </div>
-              ))}
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Presupuesto</label>
+                  <input
+                    type="text"
+                    name="number"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    value={formData.number}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Fecha de Reporte</label>
+                  <input
+                    type="date"
+                    name="reportdate"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    value={formData.reportdate}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Descripción</label>
+                  <textarea
+                    name="description"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black resize-none"
+                    value={formData.description}
+                    onChange={handleChange}
+                    rows={2}
+                  />
+                </div>
+              </div>
 
-              <div className="col-span-2 flex justify-end mt-2">
+              {/* Column 2 */}
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Punto de Venta</label>
+                  <select
+                    name="pointofsell"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    required
+                    value={formData.pointofsell}
+                    onChange={handleChange}
+                  >
+                    <option value="" disabled>
+                      Selecciona un punto de venta
+                    </option>
+                    {pointsOfSell.map((pos) => (
+                      <option key={pos.id} value={pos.name}>
+                        {pos.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Cotización</label>
+                  <input
+                    type="text"
+                    name="quotation"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    value={formData.quotation}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Acta de Entrega</label>
+                  <input
+                    type="text"
+                    name="deliverycertificate"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    value={formData.deliverycertificate}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Factura</label>
+                  <input
+                    type="text"
+                    name="bill"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    value={formData.bill}
+                    onChange={handleChange}
+                  />
+                </div>
+              </div>
+
+              {/* Column 3 */}
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Estado</label>
+                  <select
+                    name="state"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    required
+                    value={formData.state}
+                    onChange={handleChange}
+                  >
+                    <option value="" disabled>
+                      Selecciona un estado
+                    </option>
+                    <option value="En Programación">En Programación</option>
+                    <option value="En Espera Aprobación">En Espera Aprobación</option>
+                    <option value="pndte cotización">Pendiente de Cotización</option>
+                    <option value="En Ejecución">En Ejecución</option>
+                    <option value="Ejecutado">Ejecutado</option>
+                    <option value="N/A">N/A</option>
+                  </select>
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Nombre del Servicio</label>
+                  <input
+                    type="text"
+                    name="servicename"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black"
+                    value={formData.servicename}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-gray-700 mb-1 text-sm font-medium">Descripción del Servicio</label>
+                  <textarea
+                    name="servicedescription"
+                    className="p-2 rounded-md border border-gray-300 text-sm text-black resize-none"
+                    value={formData.servicedescription}
+                    onChange={handleChange}
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              <div className="md:col-span-3 flex justify-end mt-2">
                 <button
                   type="submit"
                   className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
@@ -249,9 +314,7 @@ export default function CreateReportPage() {
           </>
         )}
 
-        {formMode === 'pointofsell' && (
-          <AddPointOfSellForm />
-        )}
+        {formMode === 'pointofsell' && <AddPointOfSellForm />}
       </div>
 
       <button
@@ -284,7 +347,6 @@ export default function CreateReportPage() {
 function AddPointOfSellForm() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  // const db = getFirestore();
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -298,6 +360,9 @@ function AddPointOfSellForm() {
         setError('No autenticado');
         return;
       }
+      // Normaliza a MAYÚSCULAS al enviar (sin mover el cursor mientras escribe)
+      const normalized = name.trim().toUpperCase();
+
       const idToken = await auth.currentUser.getIdToken();
       const response = await fetch('/api/admin-add-point-of-sell', {
         method: 'POST',
@@ -305,7 +370,7 @@ function AddPointOfSellForm() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name: normalized }),
       });
       const result = await response.json();
       if (!result.success) {
@@ -320,23 +385,32 @@ function AddPointOfSellForm() {
   };
 
   return (
-    <form onSubmit={handleAdd} className="flex flex-col items-center gap-3">
-      <label className="text-gray-700 text-sm font-medium mb-1">Nombre del Punto de Venta</label>
+    <form onSubmit={handleAdd} className="mx-auto w-full max-w-sm flex flex-col gap-3">
+      <h2 className="text-center text-xl font-semibold text-gray-800">
+        Agregar Punto de Venta
+      </h2>
+
+      <label className="text-gray-700 text-sm font-medium mb-1">
+        Nombre del Punto de Venta
+      </label>
       <input
         type="text"
         value={name}
-        onChange={e => setName(e.target.value.toUpperCase())}
-        className="p-2 rounded-md border border-gray-300 text-sm text-black w-64 uppercase"
-        placeholder="Ingrese el nombre del punto de venta"
+        onChange={e => setName(e.target.value)}  // sin toUpperCase en cada tecla
+        className="p-2 rounded-md border border-gray-300 text-sm text-black w-full uppercase"
+        placeholder="INGRESE EL NOMBRE DEL PUNTO"
         required
+        autoComplete="off"
       />
+
       <button
         type="submit"
-        className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
+        className="w-full sm:w-auto self-center cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition duration-200"
       >
         Agregar Punto de Venta
       </button>
-      {error && <span className="text-red-600 text-sm">{error}</span>}
+
+      {error && <span className="text-red-600 text-sm text-center">{error}</span>}
     </form>
   );
 }

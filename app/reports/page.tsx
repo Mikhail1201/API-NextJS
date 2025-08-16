@@ -19,6 +19,8 @@ interface Report {
   deliverycertificate?: string;
   state?: string;
   bill?: string;
+  servicename?: string;
+  servicedescription?: string;
   [key: string]: unknown;
 }
 
@@ -148,48 +150,64 @@ export default function ReportsPage() {
 
       <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[420px] flex flex-col justify-between">
         <div className="flex-grow overflow-auto">
-          <table className="w-full table-auto border-collapse text-sm text-gray-800">
-            <thead className="bg-gray-100 text-gray-700">
-              <tr>
-                <th className="px-2 py-1 text-center">Solicitud</th>
-                <th className="px-2 py-1 text-center">Número</th>
-                <th className="px-2 py-1 text-center">Fecha de Reporte</th>
-                <th className="px-2 py-1 text-center">Descripción</th>
-                <th className="px-2 py-1 text-center">Punto de Venta</th>
-                <th className="px-2 py-1 text-center">Cotización</th>
-                <th className="px-2 py-1 text-center">Certificado de Entrega</th>
-                <th className="px-2 py-1 text-center">Estado</th>
-                <th className="px-2 py-1 text-center">Factura</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedReports.map(report => (
-                <tr
-                  key={report.id}
-                  className="border-t border-gray-200 hover:bg-blue-100 cursor-pointer transition"
-                  onClick={() => {
-                    setSelectedReport(report);
-                    setEditReport({ ...report }); // clone for editing
-                    setShowModal(true);
-                  }}
-                >
-                  <td className="px-2 py-1">{report.request || '-'}</td>
-                  <td className="px-2 py-1">{report.number || '-'}</td>
-                  <td className="px-2 py-1">
-                    {typeof report.reportdate === 'object' && report.reportdate && 'seconds' in report.reportdate
-                      ? new Date(report.reportdate.seconds * 1000).toLocaleDateString('es-CO')
-                      : report.reportdate || '-'}
-                  </td>
-                  <td className="px-2 py-1">{report.description || '-'}</td>
-                  <td className="px-2 py-1">{report.pointofsell || '-'}</td>
-                  <td className="px-2 py-1">{report.quotation || '-'}</td>
-                  <td className="px-2 py-1">{report.deliverycertificate || '-'}</td>
-                  <td className="px-2 py-1">{report.state || '-'}</td>
-                  <td className="px-2 py-1">{report.bill || '-'}</td>
+          <div
+            className="overflow-x-auto scrollbar-hide cursor-grab"
+            style={{
+              WebkitOverflowScrolling: 'touch',
+              scrollSnapType: 'x mandatory',
+            }}
+            onWheel={e => {
+              if (e.deltaY !== 0) {
+                e.currentTarget.scrollLeft += e.deltaY;
+                e.preventDefault();
+              }
+            }}
+          >
+            <table className="min-w-[1200px] table-auto border-collapse text-sm text-gray-800">
+              <thead className="bg-gray-100 text-gray-700">
+                <tr>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Solicitud/Aviso</th>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Presupuesto</th>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Fecha de Reporte</th>
+                  <th className="px-2 py-1 text-center min-w-[180px]">Descripción</th>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Punto de Venta</th>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Cotización</th>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Acta de Entrega</th>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Estado</th>
+                  <th className="px-2 py-1 text-center min-w-[120px]">Factura</th>
+                  <th className="px-2 py-1 text-center min-w-[150px]">Nombre del Servicio</th>
+                  <th className="px-2 py-1 text-center min-w-[180px]">Descripción del Servicio</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {paginatedReports.map(report => (
+                  <tr
+                    key={report.id}
+                    className="border-t border-gray-200 hover:bg-blue-100 cursor-pointer transition"
+                    onClick={() => {
+                      setSelectedReport(report);
+                      setEditReport({ ...report }); // clone for editing
+                      setShowModal(true);
+                    }}
+                  >
+                    <td className="px-2 py-1 min-w-[120px]">{report.request || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px]">{report.number || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px]">{/* ...date logic... */}</td>
+                    <td className="px-2 py-1 min-w-[180px]">
+                      <div className="h-12 overflow-y-auto">{report.description || '-'}</div>
+                    </td>
+                    <td className="px-2 py-1 min-w-[120px]">{report.pointofsell || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px]">{report.quotation || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px]">{report.deliverycertificate || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px]">{report.state || '-'}</td>
+                    <td className="px-2 py-1 min-w-[120px]">{report.bill || '-'}</td>
+                    <td className="px-2 py-1 min-w-[150px]">{report.servicename || '-'}</td>
+                    <td className="px-2 py-1 min-w-[180px]">{report.servicedescription || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {totalPages > 1 && (
@@ -253,10 +271,10 @@ export default function ReportsPage() {
             <h2 className="text-xl font-semibold mb-4 text-black">Detalles del Reporte</h2>
             <div className="grid grid-cols-2 gap-4 text-black">
               <div>
-                <strong>Solicitud:</strong> {selectedReport.request || '-'}
+                <strong>Solicitud/Aviso:</strong> {selectedReport.request || '-'}
               </div>
               <div>
-                <strong>Número:</strong> {selectedReport.number || '-'}
+                <strong>Presupuesto:</strong> {selectedReport.number || '-'}
               </div>
               <div>
                 <strong>Fecha de Reporte:</strong> 
@@ -274,13 +292,19 @@ export default function ReportsPage() {
                 <strong>Cotización:</strong> {selectedReport.quotation || '-'}
               </div>
               <div>
-                <strong>Certificado de Entrega:</strong> {selectedReport.deliverycertificate || '-'}
+                <strong>Acta de Entrega:</strong> {selectedReport.deliverycertificate || '-'}
               </div>
               <div>
                 <strong>Estado:</strong> {selectedReport.state || '-'}
               </div>
               <div>
                 <strong>Factura:</strong> {selectedReport.bill || '-'}
+              </div>
+              <div>
+                <strong>Nombre del Servicio:</strong> {selectedReport.servicename || '-'}
+              </div>
+              <div>
+                <strong>Descripción del Servicio:</strong> {selectedReport.servicedescription || '-'}
               </div>
             </div>
 
@@ -300,83 +324,117 @@ export default function ReportsPage() {
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
             <h2 className="text-xl font-semibold mb-4 text-black">Editar Reporte</h2>
-            <div className="grid grid-cols-2 gap-4 text-black">
-              <div>
-                <strong>Solicitud:</strong>
-                <input
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.request || ''}
-                  onChange={e => setEditReport({ ...editReport, request: e.target.value })}
-                />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-black">
+              {/* Column 1 */}
+              <div className="flex flex-col gap-2">
+                <div>
+                  <strong>Solicitud/Aviso:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.request || ''}
+                    onChange={e => setEditReport({ ...editReport, request: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Presupuesto:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.number || ''}
+                    onChange={e => setEditReport({ ...editReport, number: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Fecha de Reporte:</strong>
+                  <input
+                    type="date"
+                    className="w-full border rounded p-1 mt-1"
+                    value={
+                      typeof editReport.reportdate === 'object' && editReport.reportdate && 'seconds' in editReport.reportdate
+                        ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
+                        : editReport.reportdate || ''
+                    }
+                    onChange={e => setEditReport({ ...editReport, reportdate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Descripción:</strong>
+                  <textarea
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.description || ''}
+                    onChange={e => setEditReport({ ...editReport, description: e.target.value })}
+                  />
+                </div>
               </div>
-              <div>
-                <strong>Número:</strong>
-                <input
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.number || ''}
-                  onChange={e => setEditReport({ ...editReport, number: e.target.value })}
-                />
+              {/* Column 2 */}
+              <div className="flex flex-col gap-2">
+                <div>
+                  <strong>Punto de Venta:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.pointofsell || ''}
+                    onChange={e => setEditReport({ ...editReport, pointofsell: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Cotización:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.quotation || ''}
+                    onChange={e => setEditReport({ ...editReport, quotation: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Acta de Entrega:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.deliverycertificate || ''}
+                    onChange={e => setEditReport({ ...editReport, deliverycertificate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Factura:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.bill || ''}
+                    onChange={e => setEditReport({ ...editReport, bill: e.target.value })}
+                  />
+                </div>
               </div>
-              <div>
-                <strong>Fecha de Reporte:</strong>
-                <input
-                  type="date"
-                  className="w-full border rounded p-1 mt-1"
-                  value={
-                    typeof editReport.reportdate === 'object' && editReport.reportdate && 'seconds' in editReport.reportdate
-                      ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
-                      : editReport.reportdate || ''
-                  }
-                  onChange={e => setEditReport({ ...editReport, reportdate: e.target.value })}
-                />
-              </div>
-              <div className="col-span-2">
-                <strong>Descripción:</strong>
-                <textarea
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.description || ''}
-                  onChange={e => setEditReport({ ...editReport, description: e.target.value })}
-                />
-              </div>
-              <div>
-                <strong>Punto de Venta:</strong>
-                <input
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.pointofsell || ''}
-                  onChange={e => setEditReport({ ...editReport, pointofsell: e.target.value })}
-                />
-              </div>
-              <div>
-                <strong>Cotización:</strong>
-                <input
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.quotation || ''}
-                  onChange={e => setEditReport({ ...editReport, quotation: e.target.value })}
-                />
-              </div>
-              <div>
-                <strong>Certificado de Entrega:</strong>
-                <input
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.deliverycertificate || ''}
-                  onChange={e => setEditReport({ ...editReport, deliverycertificate: e.target.value })}
-                />
-              </div>
-              <div>
-                <strong>Estado:</strong>
-                <input
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.state || ''}
-                  onChange={e => setEditReport({ ...editReport, state: e.target.value })}
-                />
-              </div>
-              <div>
-                <strong>Factura:</strong>
-                <input
-                  className="w-full border rounded p-1 mt-1"
-                  value={editReport.bill || ''}
-                  onChange={e => setEditReport({ ...editReport, bill: e.target.value })}
-                />
+              {/* Column 3 */}
+              <div className="flex flex-col gap-2">
+                <div>
+                  <strong>Estado:</strong>
+                  <select
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.state || ''}
+                    onChange={e => setEditReport({ ...editReport, state: e.target.value })}
+                    required
+                  >
+                    <option value="" disabled>Selecciona un estado</option>
+                    <option value="En Programación">En Programación</option>
+                    <option value="En Espera Aprobación">En Espera Aprobación</option>
+                    <option value="pndte cotización">Pendiente de Cotización</option>
+                    <option value="En Ejecución">En Ejecución</option>
+                    <option value="Ejecutado">Ejecutado</option>
+                    <option value="N/A">N/A</option>
+                  </select>
+                </div>
+                <div>
+                  <strong>Nombre del Servicio:</strong>
+                  <input
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.servicename || ''}
+                    onChange={e => setEditReport({ ...editReport, servicename: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <strong>Descripción del Servicio:</strong>
+                  <textarea
+                    className="w-full border rounded p-1 mt-1"
+                    value={editReport.servicedescription || ''}
+                    onChange={e => setEditReport({ ...editReport, servicedescription: e.target.value })}
+                  />
+                </div>
               </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
