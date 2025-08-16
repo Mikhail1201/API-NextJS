@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
@@ -102,8 +109,6 @@ function lighten(hex: string, amount: number) {
   return mix(hex, '#ffffff', amount);
 }
 
-// (Eliminado darken: no se usaba)
-
 function getContrastText(hex: string) {
   const rgb = hexToRgb(hex);
   if (!rgb) return '#111827';
@@ -117,11 +122,11 @@ function getContrastText(hex: string) {
 }
 
 function deriveStylesFromBase(baseHex: string) {
-  const rowBg = lighten(baseHex, 0.85);
-  const rowHover = lighten(baseHex, 0.75);
-  const badgeBg = lighten(baseHex, 0.40);
+  const rowBg = lighten(baseHex, 0.4);
+  const rowHover = lighten(baseHex, 0.2);
+  const badgeBg = lighten(baseHex, 0.2);
   const badgeText = getContrastText(badgeBg);
-  const optBg = lighten(baseHex, 0.90);
+  const optBg = lighten(baseHex, 0.9);
   const optText = getContrastText(optBg);
   return { rowBg, rowHover, badgeBg, badgeText, optBg, optText };
 }
@@ -162,11 +167,15 @@ export default function ReportsPage() {
   const [showModal, setShowModal] = useState(false);
 
   const [showConfig, setShowConfig] = useState(false);
+  const [configView, setConfigView] = useState<'menu' | 'colors' | 'unnamed'>('menu');
 
   // Colores base por estado (por usuario)
   const [stateBaseColors, setStateBaseColors] = useState<Record<BaseStateKey, string>>(
     { ...DEFAULT_BASE_COLORS }
   );
+
+  // Flag para guardar solo al cerrar/volver
+  const hasColorChangesRef = useRef(false);
 
   const db = getFirestore();
 
@@ -181,7 +190,7 @@ export default function ReportsPage() {
       if (typeof val === 'object' && 'seconds' in val && typeof val.seconds === 'number') {
         return new Date(val.seconds * 1000).toLocaleDateString('es-CO');
       }
-    } catch { }
+    } catch {}
     return '-';
   };
 
@@ -234,7 +243,9 @@ export default function ReportsPage() {
 
       // Verifica rol
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const data: UserDocData | undefined = userDoc.exists() ? (userDoc.data() as UserDocData) : undefined;
+      const data: UserDocData | undefined = userDoc.exists()
+        ? (userDoc.data() as UserDocData)
+        : undefined;
       const userRole: string | null = data?.role ?? null;
 
       if (!userRole) {
@@ -327,24 +338,24 @@ export default function ReportsPage() {
     filterField === 'servicename'
       ? 'servicename'
       : filterField === 'servicedescription'
-        ? 'servicedescription'
-        : filterField === 'asesorias'
-          ? 'asesorias'
-          : 'description';
+      ? 'servicedescription'
+      : filterField === 'asesorias'
+      ? 'asesorias'
+      : 'description';
 
   const textPlaceholder = isTextualFieldSelected
     ? textTarget === 'servicename'
       ? 'Buscar en nombre del servicio...'
       : textTarget === 'servicedescription'
-        ? 'Buscar en descripción del servicio...'
-        : textTarget === 'asesorias'
-          ? 'Buscar en asesorías...'
-          : 'Buscar en descripción...'
+      ? 'Buscar en descripción del servicio...'
+      : textTarget === 'asesorias'
+      ? 'Buscar en asesorías...'
+      : 'Buscar en descripción...'
     : "Selecciona 'Descripción', 'Nombre del Servicio', 'Descripción del Servicio' o 'Asesorías' para buscar";
 
   useEffect(() => {
     if (!isTextualFieldSelected && textQuery) setTextQuery('');
-  }, [isTextualFieldSelected, textQuery]); // <-- añadimos textQuery
+  }, [isTextualFieldSelected, textQuery]);
 
   const FIELD_LABELS: Record<FilterField, string> = {
     request: 'Solicitud/Aviso',
@@ -467,10 +478,8 @@ export default function ReportsPage() {
 
   if (loading || !roleChecked) return null;
 
-  // const filterStateDerived = styleForStateValue(filterValue && filterValue !== 'all' ? filterValue : undefined);
-
   // Tipo seguro para variables CSS personalizadas
-  type RowStyle = CSSProperties & { ['--row-bg']?: string;['--row-hover']?: string };
+  type RowStyle = CSSProperties & { ['--row-bg']?: string; ['--row-hover']?: string };
 
   return (
     <div className="relative h-screen flex flex-col items-center px-4 py-8 overflow-hidden">
@@ -481,24 +490,24 @@ export default function ReportsPage() {
         aria-label="Go back to homepage"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none"
-          viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+             viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
       </button>
 
       {/* Configuración (abajo-derecha) */}
       <button
-        onClick={() => setShowConfig(true)}
+        onClick={() => { setShowConfig(true); setConfigView('menu'); }}
         className="fixed bottom-4 right-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
         aria-label="Abrir configuraciones"
         title="Configuraciones"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6"
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round"
-            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.877 2.42 2.42a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.89-1.543.877-3.31 2.42-2.42.93.537 2.107.214 2.573-1.066z" />
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.877 2.42 2.42a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.89-1.543.877-3.31 2.42-2.42.93.537 2.107.214 2.573-1.066z" />
           <path strokeLinecap="round" strokeLinejoin="round"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
 
@@ -581,8 +590,9 @@ export default function ReportsPage() {
           onChange={(e) => { setTextQuery(e.target.value); setCurrentPage(1); }}
           placeholder={textPlaceholder}
           disabled={!isTextualFieldSelected}
-          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${!isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${
+            !isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         />
       </div>
 
@@ -622,7 +632,7 @@ export default function ReportsPage() {
                     report.request || '-',
                     report.number || '-',
                     formatReportDate(report.reportdate),
-                    <div className="h-12 overflow-y-auto" key="desc">{report.description || '-'}</div>,
+                    <div className="h-12 overflow-y-auto flex items-center justify-center" key="desc">{report.description || '-'}</div>,
                     report.pointofsell || '-',
                     <LinkCell value={report.quotation} key="quotation" />,
                     report.deliverycertificate || '-',
@@ -686,10 +696,11 @@ export default function ReportsPage() {
                     {showEllipsis && <span className="px-1">...</span>}
                     <button
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded cursor-pointer text-black ${currentPage === page
+                      className={`px-3 py-1 rounded cursor-pointer text-black ${
+                        currentPage === page
                           ? 'bg-blue-600 text-white font-bold'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
+                      }`}
                     >
                       {page}
                     </button>
@@ -716,42 +727,10 @@ export default function ReportsPage() {
         )}
       </div>
 
-      {/* Modal Detalles */}
-      {showModal && selectedReport && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
-            <h2 className="text-xl font-semibold mb-4 text-black">Detalles del Reporte</h2>
-            <div className="grid grid-cols-2 gap-4 text-black">
-              <div><strong>Solicitud/Aviso:</strong> {selectedReport.request || '-'}</div>
-              <div><strong>Presupuesto:</strong> {selectedReport.number || '-'}</div>
-              <div><strong>Fecha de Reporte:</strong> {formatReportDate(selectedReport.reportdate)}</div>
-              <div><strong>Descripción:</strong> {selectedReport.description || '-'}</div>
-              <div><strong>Punto de Venta:</strong> {selectedReport.pointofsell || '-'}</div>
-              <div><strong>Cotización:</strong> <LinkCell value={selectedReport.quotation} /></div>
-              <div><strong>Acta de Entrega:</strong> {selectedReport.deliverycertificate || '-'}</div>
-              <div><strong>Estado:</strong> {selectedReport.state || '-'}</div>
-              <div><strong>Factura:</strong> {selectedReport.bill || '-'}</div>
-              <div><strong>Nombre del Servicio:</strong> {selectedReport.servicename || '-'}</div>
-              <div><strong>Descripción del Servicio:</strong> {selectedReport.servicedescription || '-'}</div>
-              <div><strong>Asesorías:</strong> <LinkCell value={selectedReport.asesorias} /></div>
-            </div>
-
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setShowModal(false)}
-                className="cursor-pointer px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition text-black"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal Editar */}
       {showModal && selectedReport && editReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
+          <div className="bg-white rounded-lg shadow-lg w-[55%] max-h-[90vh] overflow-y-auto min-w-3x1 p-6">
             <h2 className="text-xl font-semibold mb-4 text-black">Editar Reporte</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-black">
               {/* Columna 1 */}
@@ -779,8 +758,8 @@ export default function ReportsPage() {
                     className="w-full border rounded p-1 mt-1 h-10"
                     value={
                       typeof editReport.reportdate === 'object' &&
-                        editReport.reportdate &&
-                        'seconds' in editReport.reportdate
+                      editReport.reportdate &&
+                      'seconds' in editReport.reportdate
                         ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
                         : (editReport.reportdate as string) || ''
                     }
@@ -960,80 +939,128 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Modal Configuración: Cambiar colores */}
+      {/* Modal Configuración: menú + vistas */}
       {showConfig && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-2xl w-[92%] max-w-3xl p-6">
-            <h2 className="text-xl font-semibold text-black mb-1">Configuraciones</h2>
-            <p className="text-sm text-gray-600 mb-4">Cambiar colores por estado</p>
-
-            <div className="flex flex-col gap-3">
-              {KNOWN_STATES.map((k) => {
-                const base = stateBaseColors[k];
-                const derived = derivedStylesMap[k];
-                return (
-                  <div key={k} className="grid grid-cols-1 md:grid-cols-12 items-center gap-2 border rounded-lg p-3">
-                    <div className="md:col-span-3 text-sm font-medium text-gray-800">{k}</div>
-
-                    {/* Vista previa */}
-                    <div className="md:col-span-3">
-                      <div className="rounded-md border text-xs" style={{ backgroundColor: derived.rowBg }}>
-                        <div className="flex items-center justify-between px-2 py-1">
-                          <span className="opacity-80">Fila</span>
-                          <span className="px-2 py-0.5 rounded-full"
-                            style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}>
-                            Chip
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Pickers */}
-                    <div className="md:col-span-3 flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={normalizeHex(base)}
-                        onChange={(e) => handleColorChange(k, e.target.value)}
-                        className="w-10 h-10 p-0 border rounded cursor-pointer"
-                        title="Elige un color base"
-                      />
-                      <input
-                        type="text"
-                        value={normalizeHex(base)}
-                        onChange={(e) => handleHexTyping(k, e.target.value)}
-                        onBlur={(e) => commitHex(k, e.target.value)}
-                        className="flex-1 border rounded px-2 py-1 text-sm text-black"
-                        placeholder="#RRGGBB"
-                      />
-                    </div>
-
-                    {/* Reset */}
-                    <div className="md:col-span-3 flex justify-end">
-                      <button
-                        onClick={() => resetOne(k)}
-                        className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-3 py-2 rounded-md"
-                      >
-                        Restablecer
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 flex items-center justify-between">
+          <div className="bg-white rounded-lg shadow-2xl w-[min(92vw,900px)] max-h-[88vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 pt-5 pb-3 border-b flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {configView !== 'menu' && (
+                  <button
+                    onClick={() => {
+                      if (configView === 'colors') void flushColorPrefs();
+                      setConfigView('menu');
+                    }}
+                    className="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer"
+                  >
+                    Atrás
+                  </button>
+                )}
+                <h2 className="text-lg font-semibold text-black">Configuraciones</h2>
+              </div>
               <button
-                onClick={resetAll}
-                className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-4 py-2 rounded-md"
-              >
-                Restablecer todos
-              </button>
-              <button
-                onClick={() => setShowConfig(false)}
-                className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-md"
+                onClick={() => { void flushColorPrefs(); setShowConfig(false); }}
+                className="px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
               >
                 Cerrar
               </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4 overflow-y-auto">
+              {configView === 'menu' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setConfigView('colors')}
+                    className="cursor-pointer text-left p-4 border rounded-xl hover:shadow-md transition bg-white"
+                  >
+                    <div className="font-medium text-gray-900">Colores de estado</div>
+                    <div className="text-sm text-gray-600">Personaliza los colores de filas y los estados</div>
+                  </button>
+
+                  <button
+                    onClick={() => setConfigView('unnamed')}
+                    className="cursor-pointer text-left p-4 border rounded-xl hover:shadow-md transition bg-white"
+                  >
+                    <div className="font-medium text-gray-900">Unnamed</div>
+                    <div className="text-sm text-gray-600">Opción placeholder.</div>
+                  </button>
+                </div>
+              )}
+
+              {configView === 'unnamed' && (
+                <div className="text-gray-700">
+                  <p className="mb-2 font-medium">Unnamed</p>
+                  <p className="text-sm">Aquí puedes montar lo que necesites más adelante.</p>
+                </div>
+              )}
+
+              {configView === 'colors' && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-4">Cambiar colores por estado</p>
+
+                  <div className="flex flex-col gap-3">
+                    {KNOWN_STATES.map((k) => {
+                      const base = stateBaseColors[k];
+                      const derived = derivedStylesMap[k];
+                      return (
+                        <div key={k} className="grid grid-cols-1 md:grid-cols-12 items-center gap-2 border rounded-lg p-3">
+                          <div className="md:col-span-3 text-sm font-medium text-gray-800">{k}</div>
+
+                          {/* Vista previa */}
+                          <div className="md:col-span-3">
+                            <div className="rounded-md border text-xs" style={{ backgroundColor: derived.rowBg }}>
+                              <div className="flex items-center justify-between px-2 py-1">
+                                <span className="opacity-80 text-gray-700">Fila</span>
+                                <span className="px-2 py-0.5 rounded-full"
+                                      style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}>
+                                  Chip
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Swatch + Hex */}
+                          <div className="md:col-span-4 flex items-center gap-3">
+                            <ColorSwatch
+                              value={base}
+                              onChange={(hex) => handleColorChange(k, hex)}
+                            />
+                            <input
+                              type="text"
+                              value={normalizeHex(base)}
+                              onChange={(e) => handleHexTyping(k, e.target.value)}
+                              onBlur={(e) => commitHex(k, e.target.value)}
+                              className="flex-1 border rounded px-2 py-1 text-sm text-black"
+                              placeholder="#RRGGBB"
+                            />
+                          </div>
+
+                          {/* Reset */}
+                          <div className="md:col-span-2 flex justify-end">
+                            <button
+                              onClick={() => resetOne(k)}
+                              className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-3 py-2 rounded-md"
+                            >
+                              Restablecer
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-5">
+                    <button
+                      onClick={resetAll}
+                      className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-4 py-2 rounded-md"
+                    >
+                      Restablecer todos
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1089,13 +1116,22 @@ export default function ReportsPage() {
     }
   }
 
+  // Marca sucio y actualiza, sin llamar a la API.
+  function markColorsDirty() {
+    hasColorChangesRef.current = true;
+  }
+
+  async function flushColorPrefs() {
+    if (hasColorChangesRef.current) {
+      await persistColors(stateBaseColors);
+      hasColorChangesRef.current = false;
+    }
+  }
+
   function handleColorChange(key: BaseStateKey, hex: string) {
     const n = normalizeHex(hex);
-    setStateBaseColors((prev) => {
-      const next = { ...prev, [key]: n };
-      void persistColors(next);
-      return next;
-    });
+    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+    markColorsDirty();
   }
 
   function handleHexTyping(key: BaseStateKey, raw: string) {
@@ -1103,31 +1139,63 @@ export default function ReportsPage() {
       if (/^#?[0-9a-fA-F]{6}$/.test(raw.trim())) {
         const n = normalizeHex(raw);
         setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+        markColorsDirty();
       }
     }
   }
 
   function commitHex(key: BaseStateKey, raw: string) {
     const n = normalizeHex(raw);
-    setStateBaseColors((prev) => {
-      const next = { ...prev, [key]: n };
-      void persistColors(next);
-      return next;
-    });
+    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+    markColorsDirty();
   }
 
   function resetOne(key: BaseStateKey) {
     const def = DEFAULT_BASE_COLORS[key];
-    setStateBaseColors((prev) => {
-      const next = { ...prev, [key]: def };
-      void persistColors(next);
-      return next;
-    });
+    setStateBaseColors((prev) => ({ ...prev, [key]: def }));
+    markColorsDirty();
   }
 
   function resetAll() {
     const all = { ...DEFAULT_BASE_COLORS };
     setStateBaseColors(all);
-    void persistColors(all);
+    markColorsDirty();
   }
+}
+
+/* ====== Componente: Swatch cuadrado ====== */
+function ColorSwatch({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* Botón cuadrado estilo muestra */}
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="cursor-pointer inline-flex items-center justify-center w-8 h-8 rounded border border-gray-400 shadow-inner"
+        style={{
+          backgroundColor: value,
+          boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.6)',
+        }}
+        title={value}
+        aria-label="Elegir color"
+      />
+      {/* input color oculto visualmente pero accesible */}
+      <input
+        ref={inputRef}
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="sr-only"
+        aria-label="Selector de color"
+      />
+    </div>
+  );
 }
