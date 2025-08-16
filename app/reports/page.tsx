@@ -55,13 +55,18 @@ export default function ReportsPage() {
   const [filterField, setFilterField] = useState<FilterField | ''>('');
   const [filterValue, setFilterValue] = useState<string>(''); // usado solo para pointofsell/state
 
-  // Caja de texto para búsqueda en campos de texto
+  // Búsqueda de texto
   const [textQuery, setTextQuery] = useState<string>('');
 
   const db = getFirestore();
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [editReport, setEditReport] = useState<Report | null>(null);
   const [showModal, setShowModal] = useState(false);
+
+  // Clases unificadas para los controles del modal (misma altura)
+  const ctrl = 'w-full border rounded px-3 py-[7px] h-10 text-black';
+  const ctrlTextarea = 'w-full border rounded px-5 py-[7px] h-10 text-black resize-none leading-[1.25rem]';
+  const ctrlSelect = 'w-full border rounded px-3 h-10 text-black';
 
   // ---- helpers ----
   const formatReportDate = (val: string | { seconds: number } | undefined) => {
@@ -74,7 +79,7 @@ export default function ReportsPage() {
       if (typeof val === 'object' && 'seconds' in val && typeof val.seconds === 'number') {
         return new Date(val.seconds * 1000).toLocaleDateString('es-CO');
       }
-    } catch {}
+    } catch { }
     return '-';
   };
 
@@ -94,7 +99,6 @@ export default function ReportsPage() {
     return m ? Number(m[0]) : NaN;
   };
 
-  // URL helper
   const extractFirstUrl = (text?: string | null): string | null => {
     if (!text) return null;
     const match = text.match(/(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
@@ -159,35 +163,31 @@ export default function ReportsPage() {
   const isNumericKey = (k: FilterField) => k === 'request' || k === 'number' || k === 'bill';
   const isDateKey = (k: FilterField) => k === 'reportdate';
 
-  // ¿El campo seleccionado es textual para habilitar la caja de búsqueda?
   const isTextualFieldSelected =
     filterField === 'description' ||
     filterField === 'servicename' ||
     filterField === 'servicedescription' ||
     filterField === 'asesorias';
 
-  // Campo objetivo de la búsqueda de texto (incluye asesorías)
   const textTarget: 'description' | 'servicename' | 'servicedescription' | 'asesorias' =
     filterField === 'servicename'
       ? 'servicename'
       : filterField === 'servicedescription'
-      ? 'servicedescription'
-      : filterField === 'asesorias'
-      ? 'asesorias'
-      : 'description';
+        ? 'servicedescription'
+        : filterField === 'asesorias'
+          ? 'asesorias'
+          : 'description';
 
-  // Placeholder dinámico
   const textPlaceholder = isTextualFieldSelected
     ? textTarget === 'servicename'
       ? 'Buscar en nombre del servicio...'
       : textTarget === 'servicedescription'
-      ? 'Buscar en descripción del servicio...'
-      : textTarget === 'asesorias'
-      ? 'Buscar en asesorías...'
-      : 'Buscar en descripción...'
+        ? 'Buscar en descripción del servicio...'
+        : textTarget === 'asesorias'
+          ? 'Buscar en asesorías...'
+          : 'Buscar en descripción...'
     : "Selecciona 'Descripción', 'Nombre del Servicio', 'Descripción del Servicio' o 'Asesorías' para buscar";
 
-  // Si cambia a un campo NO textual, limpamos el query
   useEffect(() => {
     if (!isTextualFieldSelected && textQuery) setTextQuery('');
   }, [isTextualFieldSelected]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -221,7 +221,6 @@ export default function ReportsPage() {
   const filteredReports = useMemo(() => {
     let filtered = reports;
 
-    // Filtro secundario SOLO para pointofsell/state
     if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
       filtered = filtered.filter(r => r.pointofsell === filterValue);
     }
@@ -229,13 +228,11 @@ export default function ReportsPage() {
       filtered = filtered.filter(r => r.state === filterValue);
     }
 
-    // Búsqueda textual SOLO si el campo textual está seleccionado
     if (isTextualFieldSelected && textQuery.trim()) {
       const q = textQuery.toLowerCase();
       filtered = filtered.filter(r => String(r[textTarget] ?? '').toLowerCase().includes(q));
     }
 
-    // Orden
     const asc = sortOrder === 'asc';
 
     const cmpDate = (a: Report, b: Report) => {
@@ -301,18 +298,18 @@ export default function ReportsPage() {
   }, [filteredReports, totalPages, currentPage]);
 
   const COLS = [
-    { key: 'request',            label: 'Solicitud/Aviso',           className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'number',             label: 'Presupuesto',               className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'reportdate',         label: 'Fecha de Reporte',          className: 'px-2 py-1 text-center min-w-[120px] whitespace-nowrap' },
-    { key: 'description',        label: 'Descripción',               className: 'px-2 py-1 text-center min-w-[180px]' },
-    { key: 'pointofsell',        label: 'Punto de Venta',            className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'quotation',          label: 'Cotización',                className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'deliverycertificate',label: 'Acta de Entrega',           className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'state',              label: 'Estado',                    className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'bill',               label: 'Factura',                   className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'servicename',        label: 'Nombre del Servicio',       className: 'px-2 py-1 text-center min-w-[150px]' },
-    { key: 'servicedescription', label: 'Descripción del Servicio',  className: 'px-2 py-1 text-center min-w-[180px]' },
-    { key: 'asesorias',          label: 'Asesorías',                 className: 'px-2 py-1 text-center min-w-[180px]' },
+    { key: 'request', label: 'Solicitud/Aviso', className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'number', label: 'Presupuesto', className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'reportdate', label: 'Fecha de Reporte', className: 'px-2 py-1 text-center min-w-[120px] whitespace-nowrap' },
+    { key: 'description', label: 'Descripción', className: 'px-2 py-1 text-center min-w-[180px]' },
+    { key: 'pointofsell', label: 'Punto de Venta', className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'quotation', label: 'Cotización', className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'deliverycertificate', label: 'Acta de Entrega', className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'state', label: 'Estado', className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'bill', label: 'Factura', className: 'px-2 py-1 text-center min-w-[120px]' },
+    { key: 'servicename', label: 'Nombre del Servicio', className: 'px-2 py-1 text-center min-w-[150px]' },
+    { key: 'servicedescription', label: 'Descripción del Servicio', className: 'px-2 py-1 text-center min-w-[180px]' },
+    { key: 'asesorias', label: 'Asesorías', className: 'px-2 py-1 text-center min-w-[180px]' },
   ] as const;
 
   if (loading || !roleChecked) return null;
@@ -336,7 +333,6 @@ export default function ReportsPage() {
 
       {/* Controles */}
       <div className="flex flex-wrap items-center gap-3 z-10 w-full max-w-6xl justify-start mt-6 mb-2">
-        {/* Botón que ordena según el campo seleccionado */}
         <button
           onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
           className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold transition text-center"
@@ -344,7 +340,6 @@ export default function ReportsPage() {
           Ordenar por {filterField ? FIELD_LABELS[sortKey] : 'Fecha'}: {sortDescription}
         </button>
 
-        {/* Selector de campo principal */}
         <select
           value={filterField}
           onChange={(e) => {
@@ -376,7 +371,6 @@ export default function ReportsPage() {
           ))}
         </select>
 
-        {/* Control secundario SOLO para punto de venta y estado */}
         {filterField === 'pointofsell' && (
           <select
             value={filterValue || 'all'}
@@ -399,16 +393,14 @@ export default function ReportsPage() {
           </select>
         )}
 
-        {/* Búsqueda textual dinámica (deshabilitada si el campo no es textual) */}
         <input
           type="text"
           value={textQuery}
           onChange={(e) => { setTextQuery(e.target.value); setCurrentPage(1); }}
           placeholder={textPlaceholder}
           disabled={!isTextualFieldSelected}
-          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${
-            !isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
+          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${!isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
         />
       </div>
 
@@ -440,7 +432,7 @@ export default function ReportsPage() {
                     report.request || '-',
                     report.number || '-',
                     formatReportDate(report.reportdate),
-                    <div className="h-12 overflow-y-auto" key="desc">{report.description || '-'}</div>,
+                    <div className="h-12 overflow-y-auto flex items-center justify-center" key="desc">{report.description || '-'}</div>,
                     report.pointofsell || '-',
                     <LinkCell value={report.quotation} key="quotation" />,
                     report.deliverycertificate || '-',
@@ -492,11 +484,10 @@ export default function ReportsPage() {
                     {showEllipsis && <span className="px-1">...</span>}
                     <button
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded cursor-pointer text-black ${
-                        currentPage === page
-                          ? 'bg-blue-600 text-white font-bold'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                      className={`px-3 py-1 rounded cursor-pointer text-black ${currentPage === page
+                        ? 'bg-blue-600 text-white font-bold'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
                     >
                       {page}
                     </button>
@@ -555,136 +546,160 @@ export default function ReportsPage() {
         </div>
       )}
 
+      {/* Modal Editar (con controles de altura uniforme) */}
+      {/* ====== Editar Reporte ====== */}
+      {/* Modal Editar */}
       {/* Modal Editar */}
       {showModal && selectedReport && editReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg shadow-lg w-[90%] max-w-3xl p-6">
             <h2 className="text-xl font-semibold mb-4 text-black">Editar Reporte</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-black">
-              {/* Columna 1 */}
-              <div className="flex flex-col gap-2">
-                <div>
-                  <strong>Solicitud/Aviso:</strong>
-                  <input
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.request || ''}
-                    onChange={e => setEditReport({ ...editReport, request: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Presupuesto:</strong>
-                  <input
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.number || ''}
-                    onChange={e => setEditReport({ ...editReport, number: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Fecha de Reporte:</strong>
-                  <input
-                    type="date"
-                    className="w-full border rounded p-1 mt-1"
-                    value={
-                      typeof editReport.reportdate === 'object' &&
+
+            {/* Grid: 3 columnas x 4 filas */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-4 text-black">
+
+              {/* Fila 1 */}
+              <div>
+                <strong>Solicitud/Aviso:</strong>
+                <input
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.request || ''}
+                  onChange={e => setEditReport({ ...editReport, request: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <strong>Punto de Venta:</strong>
+                <select
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.pointofsell ?? ''}
+                  onChange={e => setEditReport({ ...editReport, pointofsell: e.target.value })}
+                >
+                  <option value="" disabled>Selecciona un punto de venta</option>
+                  {editReport.pointofsell && !uniquePoints.includes(editReport.pointofsell) && (
+                    <option value={editReport.pointofsell}>{editReport.pointofsell} (actual)</option>
+                  )}
+                  {uniquePoints.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <strong>Estado:</strong>
+                <select
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.state || ''}
+                  onChange={e => setEditReport({ ...editReport, state: e.target.value })}
+                  required
+                >
+                  <option value="" disabled>Selecciona un estado</option>
+                  <option value="En Programación">En Programación</option>
+                  <option value="En Espera Aprobación">En Espera Aprobación</option>
+                  <option value="pndte cotización">Pendiente de Cotización</option>
+                  <option value="En Ejecución">En Ejecución</option>
+                  <option value="Ejecutado">Ejecutado</option>
+                  <option value="N/A">N/A</option>
+                </select>
+              </div>
+
+              {/* Fila 2 */}
+              <div>
+                <strong>Presupuesto:</strong>
+                <input
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.number || ''}
+                  onChange={e => setEditReport({ ...editReport, number: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <strong>Cotización:</strong>
+                <input
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.quotation || ''}
+                  onChange={e => setEditReport({ ...editReport, quotation: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <strong>Nombre del Servicio:</strong>
+                <input
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.servicename || ''}
+                  onChange={e => setEditReport({ ...editReport, servicename: e.target.value })}
+                />
+              </div>
+
+              {/* Fila 3 */}
+              <div>
+                <strong>Fecha de Reporte:</strong>
+                <input
+                  type="date"
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={
+                    typeof editReport.reportdate === 'object' &&
                       editReport.reportdate &&
                       'seconds' in editReport.reportdate
-                        ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
-                        : (editReport.reportdate as string) || ''
-                    }
-                    onChange={e => setEditReport({ ...editReport, reportdate: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Descripción:</strong>
-                  <textarea
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.description || ''}
-                    onChange={e => setEditReport({ ...editReport, description: e.target.value })}
-                  />
-                </div>
+                      ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
+                      : (editReport.reportdate as string) || ''
+                  }
+                  onChange={e => setEditReport({ ...editReport, reportdate: e.target.value })}
+                />
               </div>
-              {/* Columna 2 */}
-              <div className="flex flex-col gap-2">
-                <div>
-                  <strong>Punto de Venta:</strong>
-                  <input
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.pointofsell || ''}
-                    onChange={e => setEditReport({ ...editReport, pointofsell: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Cotización:</strong>
-                  <input
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.quotation || ''}
-                    onChange={e => setEditReport({ ...editReport, quotation: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Acta de Entrega:</strong>
-                  <input
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.deliverycertificate || ''}
-                    onChange={e => setEditReport({ ...editReport, deliverycertificate: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Factura:</strong>
-                  <input
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.bill || ''}
-                    onChange={e => setEditReport({ ...editReport, bill: e.target.value })}
-                  />
-                </div>
+
+              <div>
+                <strong>Acta de Entrega:</strong>
+                <input
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.deliverycertificate || ''}
+                  onChange={e => setEditReport({ ...editReport, deliverycertificate: e.target.value })}
+                />
               </div>
-              {/* Columna 3 */}
-              <div className="flex flex-col gap-2">
-                <div>
-                  <strong>Estado:</strong>
-                  <select
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.state || ''}
-                    onChange={e => setEditReport({ ...editReport, state: e.target.value })}
-                    required
-                  >
-                    <option value="" disabled>Selecciona un estado</option>
-                    <option value="En Programación">En Programación</option>
-                    <option value="En Espera Aprobación">En Espera Aprobación</option>
-                    <option value="pndte cotización">Pendiente de Cotización</option>
-                    <option value="En Ejecución">En Ejecución</option>
-                    <option value="Ejecutado">Ejecutado</option>
-                    <option value="N/A">N/A</option>
-                  </select>
-                </div>
-                <div>
-                  <strong>Nombre del Servicio:</strong>
-                  <input
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.servicename || ''}
-                    onChange={e => setEditReport({ ...editReport, servicename: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Descripción del Servicio:</strong>
-                  <textarea
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.servicedescription || ''}
-                    onChange={e => setEditReport({ ...editReport, servicedescription: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <strong>Asesorías:</strong>
-                  <textarea
-                    className="w-full border rounded p-1 mt-1"
-                    value={editReport.asesorias || ''}
-                    onChange={e => setEditReport({ ...editReport, asesorias: e.target.value })}
-                    placeholder="Detalle, link o nota de asesorías"
-                  />
-                </div>
+
+              <div>
+                <strong>Descripción del Servicio:</strong>
+                <textarea
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black resize-none leading-10 py-0"
+                  rows={1}
+                  value={editReport.servicedescription || ''}
+                  onChange={e => setEditReport({ ...editReport, servicedescription: e.target.value })}
+                />
+              </div>
+
+              {/* Fila 4 */}
+              <div>
+                <strong>Descripción:</strong>
+                <textarea
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black resize-none leading-10 py-0"
+                  rows={1}
+                  value={editReport.description || ''}
+                  onChange={e => setEditReport({ ...editReport, description: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <strong>Factura:</strong>
+                <input
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black"
+                  value={editReport.bill || ''}
+                  onChange={e => setEditReport({ ...editReport, bill: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <strong>Asesorías:</strong>
+                <textarea
+                  className="w-full h-10 px-3 mt-1 border rounded text-sm text-black resize-none leading-10 py-0"
+                  rows={1}
+                  placeholder="Detalle de asesorías"
+                  value={editReport.asesorias || ''}
+                  onChange={e => setEditReport({ ...editReport, asesorias: e.target.value })}
+                />
               </div>
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+
+            <div className="mt-6 flex justify-end gap-2">
               <button
                 onClick={() => setShowModal(false)}
                 className="cursor-pointer px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition text-black"
@@ -709,11 +724,10 @@ export default function ReportsPage() {
                     successDiv.className =
                       'fixed bottom-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg flex items-center gap-2 opacity-0 transition-opacity duration-500 z-50';
                     successDiv.innerHTML = `
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
-      </svg>
-      <span>¡Reporte actualizado exitosamente! Actualizando en <span id="countdown">${seconds}</span>...</span>
-    `;
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
+</svg>
+<span>¡Reporte actualizado exitosamente! Actualizando en <span id="countdown">${seconds}</span>...</span>`;
                     document.body.appendChild(successDiv);
                     setTimeout(() => successDiv.classList.add('opacity-100'), 10);
                     const countdownInterval = setInterval(() => {
