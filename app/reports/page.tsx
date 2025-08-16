@@ -23,6 +23,8 @@ interface Report {
   [key: string]: unknown;
 }
 
+type UserDocData = { role?: string };
+
 export default function ReportsPage() {
   const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
@@ -54,7 +56,7 @@ export default function ReportsPage() {
   };
 
   // Devuelve la primera URL válida encontrada en el texto (http/https o www.)
-  const extractFirstUrl = (text?: string | null) => {
+  const extractFirstUrl = (text?: string | null): string | null => {
     if (!text) return null;
     const match = text.match(/(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
     if (!match) return null;
@@ -83,18 +85,24 @@ export default function ReportsPage() {
   useEffect(() => {
     const checkRoleAndFetchReports = async () => {
       if (!user) return;
+
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userRole = userDoc.exists() ? (userDoc.data() as any).role : null;
+      const data: UserDocData | undefined = userDoc.exists() ? (userDoc.data() as UserDocData) : undefined;
+      const userRole: string | null = data?.role ?? null;
+
       if (!userRole) {
         await signOut(auth);
         router.push('/login');
         return;
       }
+
       setRoleChecked(true);
+
       const reportsSnapshot = await getDocs(collection(db, 'reports'));
       const reportsList = reportsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Report));
       setReports(reportsList);
     };
+
     if (!loading && user) checkRoleAndFetchReports();
   }, [user, loading, db, router]);
 
