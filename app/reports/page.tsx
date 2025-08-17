@@ -1182,7 +1182,7 @@ export default function ReportsPage() {
                     onDrop={(e) => {
                       e.preventDefault();
                       if (dragIndexRef.current === null || dragOverIndex === null) return;
-                      let from = dragIndexRef.current;
+                      const from = dragIndexRef.current;
                       let to = dragOverIndex;
                       if (to > from) to -= 1; // ajuste por extracción previa
                       if (from !== to) moveIndex(from, to);
