@@ -6,7 +6,6 @@ import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firesto
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 
-// Define a type for your log data
 interface Log {
   id: string;
   performedBy?: string;
@@ -32,19 +31,17 @@ export default function LogsPage() {
     const checkRoleAndFetchLogs = async () => {
       if (!user) return;
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userRole = userDoc.exists() ? userDoc.data().role : null;
+      const userRole = userDoc.exists() ? (userDoc.data() as { role?: string }).role : null;
       if (userRole !== 'superadmin') {
         notFound();
         return;
       }
       setRoleChecked(true);
       const logsSnapshot = await getDocs(collection(db, 'logs'));
-      const logsList = logsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Log));
+      const logsList = logsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Log));
       setLogs(logsList);
     };
-    if (!loading && user) {
-      checkRoleAndFetchLogs();
-    }
+    if (!loading && user) checkRoleAndFetchLogs();
   }, [user, loading, db]);
 
   const uniqueUsers = useMemo(
@@ -58,15 +55,11 @@ export default function LogsPage() {
 
   const filteredLogs = useMemo(() => {
     let filtered = logs;
-    if (selectedUser !== 'all') {
-      filtered = filtered.filter(log => log.performedBy === selectedUser);
-    }
-    if (selectedAction !== 'all') {
-      filtered = filtered.filter(log => log.action === selectedAction);
-    }
+    if (selectedUser !== 'all') filtered = filtered.filter(log => log.performedBy === selectedUser);
+    if (selectedAction !== 'all') filtered = filtered.filter(log => log.action === selectedAction);
     filtered = filtered.slice().sort((a, b) => {
-      const aTime = a.timestamp?.seconds || 0;
-      const bTime = b.timestamp?.seconds || 0;
+      const aTime = a.timestamp?.seconds ?? 0;
+      const bTime = b.timestamp?.seconds ?? 0;
       return sortOrder === 'asc' ? aTime - bTime : bTime - aTime;
     });
     return filtered;
@@ -114,8 +107,8 @@ export default function LogsPage() {
           className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
         >
           <option value="all">Todos los Usuarios</option>
-          {uniqueUsers.map(user => (
-            <option key={user as string} value={user as string}>{user as string}</option>
+          {uniqueUsers.map(u => (
+            <option key={u as string} value={u as string}>{u as string}</option>
           ))}
         </select>
         <select
@@ -124,30 +117,50 @@ export default function LogsPage() {
           className="cursor-pointer p-2 rounded-lg border border-gray-300 bg-white text-gray-800 appearance-none"
         >
           <option value="all">Todas las Acciones</option>
-          {uniqueActions.map(action => (
-            <option key={action as string} value={action as string}>{action as string}</option>
+          {uniqueActions.map(a => (
+            <option key={a as string} value={a as string}>{a as string}</option>
           ))}
         </select>
       </div>
 
-      <div className="z-10 bg-white w-full max-w-4xl rounded-xl shadow-xl p-4 h-[500px] flex flex-col justify-between">
-        <div className="overflow-auto">
-          <table className="w-full table-auto border-collapse">
+      {/* Contenedor con altura fija para estabilidad visual */}
+      <div className="z-10 bg-white w-full max-w-4xl rounded-xl shadow-xl p-4 h-[500px] flex flex-col">
+        {/* Área scrollable que mantiene el alto entre páginas */}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="bg-gray-100 text-gray-700 text-sm">
-                <th className="px-2 py-1 text-left">Usuario</th>
-                <th className="px-2 py-1 text-left">Acción</th>
-                <th className="px-2 py-1 text-left">Descripción</th>
-                <th className="px-2 py-1 text-left">Fecha y Hora</th>
+                <th className="px-2 py-1 text-left w-[28%]">Usuario</th>
+                <th className="px-2 py-1 text-left w-[22%]">Acción</th>
+                <th className="px-2 py-1 text-center w-[34%]">Descripción</th>
+                <th className="px-2 py-1 text-center w-[22%]">Fecha y Hora</th>
               </tr>
             </thead>
             <tbody>
               {paginatedLogs.map(log => (
-                <tr key={log.id} className="border-t border-gray-200 text-sm text-gray-800 hover:bg-gray-50">
-                  <td className="px-2 py-1">{log.performedBy || '-'}</td>
-                  <td className="px-2 py-1">{log.action}</td>
-                  <td className="px-2 py-1">{log.details}</td>
-                  <td className="px-2 py-1">
+                <tr
+                  key={log.id}
+                  className="border-t border-gray-200 text-sm text-gray-800 hover:bg-gray-50 align-middle"
+                >
+                  {/* Usuario: izquierda + envoltura de palabras largas */}
+                  <td className="px-2 py-1 text-left align-middle break-all whitespace-normal">
+                    {log.performedBy || '-'}
+                  </td>
+
+                  {/* Acción: izquierda + envoltura de palabras largas */}
+                  <td className="px-2 py-1 text-left align-middle break-all whitespace-normal">
+                    {log.action || '-'}
+                  </td>
+
+                  {/* Descripción: alto fijo con scroll y centrado horizontal */}
+                  <td className="px-2 py-1 text-center align-middle">
+                    <div className="h-12 overflow-y-auto pr-1">
+                      {log.details || '-'}
+                    </div>
+                  </td>
+
+                  {/* Fecha: centrada, sin ruptura */}
+                  <td className="px-2 py-1 text-center align-middle whitespace-nowrap">
                     {log.timestamp?.seconds
                       ? new Date(log.timestamp.seconds * 1000).toLocaleString('es-CO')
                       : '-'}
