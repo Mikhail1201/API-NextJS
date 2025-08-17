@@ -126,7 +126,7 @@ function deriveStylesFromBase(baseHex: string) {
   const rowHover = lighten(baseHex, 0.2);
   const badgeBg = lighten(baseHex, 0.2);
   const badgeText = getContrastText(badgeBg);
-  const optBg = lighten(baseHex, 0.9);
+  const optBg = lighten(baseHex, 0.2);
   const optText = getContrastText(optBg);
   return { rowBg, rowHover, badgeBg, badgeText, optBg, optText };
 }
@@ -144,6 +144,34 @@ function pickStateKey(raw?: string): BaseStateKey | null {
   if ((KNOWN_STATES as readonly string[]).includes(raw)) return raw as BaseStateKey;
   return null;
 }
+
+/* ================== Columnas ================== */
+const COL_DEFS = [
+  { key: 'request', label: 'Solicitud/Aviso', className: 'px-2 py-1 text-center min-w-[120px]' },
+  { key: 'number', label: 'Presupuesto', className: 'px-2 py-1 text-center min-w-[120px]' },
+  { key: 'reportdate', label: 'Fecha de Reporte', className: 'px-2 py-1 text-center min-w-[120px] whitespace-nowrap' },
+  { key: 'description', label: 'Descripción', className: 'px-2 py-1 text-center min-w-[180px]' },
+  { key: 'pointofsell', label: 'Punto de Venta', className: 'px-2 py-1 text-center min-w-[120px]' },
+  { key: 'quotation', label: 'Cotización', className: 'px-2 py-1 text-center min-w-[120px]' },
+  { key: 'deliverycertificate', label: 'Acta de Entrega', className: 'px-2 py-1 text-center min-w-[120px]' },
+  { key: 'state', label: 'Estado', className: 'px-2 py-1 text-center min-w-[120px]' },
+  { key: 'bill', label: 'Factura', className: 'px-2 py-1 text-center min-w-[120px]' },
+  { key: 'servicename', label: 'Nombre del Servicio', className: 'px-2 py-1 text-center min-w-[150px]' },
+  { key: 'servicedescription', label: 'Descripción del Servicio', className: 'px-2 py-1 text-center min-w-[180px]' },
+  { key: 'asesorias', label: 'Asesorías', className: 'px-2 py-1 text-center min-w-[180px]' },
+] as const;
+
+type ColKey = typeof COL_DEFS[number]['key'];
+
+const COL_MAP: Record<ColKey, { label: string; className: string }> = COL_DEFS.reduce(
+  (acc, c) => {
+    acc[c.key] = { label: c.label, className: c.className };
+    return acc;
+  },
+  {} as Record<ColKey, { label: string; className: string }>
+);
+
+const DEFAULT_COLUMN_ORDER: ColKey[] = COL_DEFS.map((c) => c.key);
 
 /* ================== Componente principal ================== */
 
@@ -167,15 +195,25 @@ export default function ReportsPage() {
   const [showModal, setShowModal] = useState(false);
 
   const [showConfig, setShowConfig] = useState(false);
-  const [configView, setConfigView] = useState<'menu' | 'colors' | 'unnamed'>('menu');
+  const [configView, setConfigView] = useState<'menu' | 'colors' | 'organize'>('menu');
 
   // Colores base por estado (por usuario)
   const [stateBaseColors, setStateBaseColors] = useState<Record<BaseStateKey, string>>(
     { ...DEFAULT_BASE_COLORS }
   );
 
-  // Flag para guardar solo al cerrar/volver
+  // Orden de columnas (por usuario)
+  const [columnOrder, setColumnOrder] = useState<ColKey[]>(DEFAULT_COLUMN_ORDER);
+
+  // Flags para guardar solo al cerrar/volver
   const hasColorChangesRef = useRef(false);
+  const hasOrderChangesRef = useRef(false);
+
+  // --- Drag visual + autoscroll + guía ---
+  const [draggingKey, setDraggingKey] = useState<ColKey | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragIndexRef = useRef<number | null>(null);
+  const configBodyRef = useRef<HTMLDivElement | null>(null);
 
   const db = getFirestore();
 
@@ -269,14 +307,23 @@ export default function ReportsPage() {
             headers: { Authorization: `Bearer ${idToken}` },
           });
           if (res.ok) {
-            const json = (await res.json()) as { stateColors?: Record<string, string> };
-            const stored = json.stateColors || {};
+            const json = (await res.json()) as {
+              stateColors?: Record<string, string>;
+              columnOrder?: string[];
+            };
+
+            // Colores
+            const storedColors = json.stateColors || {};
             const merged: Record<BaseStateKey, string> = { ...DEFAULT_BASE_COLORS };
             (KNOWN_STATES as readonly BaseStateKey[]).forEach((k) => {
-              const val = stored[k];
+              const val = storedColors[k];
               merged[k] = typeof val === 'string' ? normalizeHex(val) : DEFAULT_BASE_COLORS[k];
             });
             setStateBaseColors(merged);
+
+            // Orden columnas
+            const sanitized = sanitizeOrder(json.columnOrder);
+            setColumnOrder(sanitized);
           }
         }
       } catch {
@@ -461,26 +508,173 @@ export default function ReportsPage() {
     if (currentPage > totalPages) setCurrentPage(1);
   }, [filteredReports, totalPages, currentPage]);
 
-  const COLS = [
-    { key: 'request', label: 'Solicitud/Aviso', className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'number', label: 'Presupuesto', className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'reportdate', label: 'Fecha de Reporte', className: 'px-2 py-1 text-center min-w-[120px] whitespace-nowrap' },
-    { key: 'description', label: 'Descripción', className: 'px-2 py-1 text-center min-w-[180px]' },
-    { key: 'pointofsell', label: 'Punto de Venta', className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'quotation', label: 'Cotización', className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'deliverycertificate', label: 'Acta de Entrega', className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'state', label: 'Estado', className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'bill', label: 'Factura', className: 'px-2 py-1 text-center min-w-[120px]' },
-    { key: 'servicename', label: 'Nombre del Servicio', className: 'px-2 py-1 text-center min-w-[150px]' },
-    { key: 'servicedescription', label: 'Descripción del Servicio', className: 'px-2 py-1 text-center min-w-[180px]' },
-    { key: 'asesorias', label: 'Asesorías', className: 'px-2 py-1 text-center min-w-[180px]' },
-  ] as const;
-
   if (loading || !roleChecked) return null;
 
   // Tipo seguro para variables CSS personalizadas
   type RowStyle = CSSProperties & { ['--row-bg']?: string; ['--row-hover']?: string };
 
+  /* ====== Render helpers de celdas ====== */
+  function cellFor(report: Report, key: ColKey, derived: ReturnType<typeof styleForStateValue>): ReactNode {
+    switch (key) {
+      case 'request':
+        return report.request || '-';
+      case 'number':
+        return report.number || '-';
+      case 'reportdate':
+        return formatReportDate(report.reportdate);
+      case 'description':
+        return <div className="h-12 overflow-y-auto flex items-center justify-center">{report.description || '-'}</div>;
+      case 'pointofsell':
+        return report.pointofsell || '-';
+      case 'quotation':
+        return <LinkCell value={report.quotation} />;
+      case 'deliverycertificate':
+        return report.deliverycertificate || '-';
+      case 'state':
+        return (
+          <span
+            className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold"
+            style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}
+          >
+            {report.state || '-'}
+          </span>
+        );
+      case 'bill':
+        return report.bill || '-';
+      case 'servicename':
+        return report.servicename || '-';
+      case 'servicedescription':
+        return report.servicedescription || '-';
+      case 'asesorias':
+        return <LinkCell value={report.asesorias} />;
+      default:
+        return '-';
+    }
+  }
+
+  /* ====== Persistencia de prefs (colores + orden) ====== */
+  function sanitizeOrder(input?: unknown): ColKey[] {
+    if (!Array.isArray(input)) return [...DEFAULT_COLUMN_ORDER];
+    const validSet = new Set<ColKey>(DEFAULT_COLUMN_ORDER);
+    const dedup: ColKey[] = [];
+    for (const v of input) {
+      if (validSet.has(v as ColKey) && !dedup.includes(v as ColKey)) dedup.push(v as ColKey);
+    }
+    // agrega faltantes al final
+    for (const k of DEFAULT_COLUMN_ORDER) if (!dedup.includes(k)) dedup.push(k);
+    return dedup;
+  }
+
+  async function persistPrefs(next: {
+    stateColors: Record<BaseStateKey, string>;
+    columnOrder: ColKey[];
+  }) {
+    if (!auth.currentUser) return;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      await fetch('/api/admin-user-prefs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(next),
+      });
+    } catch {
+      // no bloquear UI si falla
+    }
+  }
+
+  function markColorsDirty() {
+    hasColorChangesRef.current = true;
+  }
+  function markOrderDirty() {
+    hasOrderChangesRef.current = true;
+  }
+
+  async function flushPrefs() {
+    if (hasColorChangesRef.current || hasOrderChangesRef.current) {
+      await persistPrefs({
+        stateColors: stateBaseColors,
+        columnOrder,
+      });
+      hasColorChangesRef.current = false;
+      hasOrderChangesRef.current = false;
+    }
+  }
+
+  /* ====== Handlers de colores ====== */
+  function handleColorChange(key: BaseStateKey, hex: string) {
+    const n = normalizeHex(hex);
+    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+    markColorsDirty();
+  }
+
+  function handleHexTyping(key: BaseStateKey, raw: string) {
+    if (/^#?[0-9a-fA-F]{0,6}$/.test(raw.trim())) {
+      if (/^#?[0-9a-fA-F]{6}$/.test(raw.trim())) {
+        const n = normalizeHex(raw);
+        setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+        markColorsDirty();
+      }
+    }
+  }
+
+  function commitHex(key: BaseStateKey, raw: string) {
+    const n = normalizeHex(raw);
+    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+    markColorsDirty();
+  }
+
+  function resetOne(key: BaseStateKey) {
+    const def = DEFAULT_BASE_COLORS[key];
+    setStateBaseColors((prev) => ({ ...prev, [key]: def }));
+    markColorsDirty();
+  }
+
+  function resetAll() {
+    const all = { ...DEFAULT_BASE_COLORS };
+    setStateBaseColors(all);
+    markColorsDirty();
+  }
+
+  /* ====== Drag helpers (organizar columnas) ====== */
+  function autoScrollOnDrag(e: React.DragEvent) {
+    const container = configBodyRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const y = e.clientY;
+    const threshold = 40; // px
+    const step = 10;
+
+    if (y < rect.top + threshold) {
+      container.scrollBy({ top: -step, behavior: 'auto' });
+    } else if (y > rect.bottom - threshold) {
+      container.scrollBy({ top: step, behavior: 'auto' });
+    }
+  }
+
+  function moveIndex(from: number, to: number) {
+    setColumnOrder((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+    markOrderDirty();
+  }
+
+  function DropIndicator({ show }: { show: boolean }) {
+    if (!show) return null;
+    return (
+      <div className="h-3 -my-1">
+        <div className="h-[3px] rounded bg-blue-500/80 shadow" />
+      </div>
+    );
+  }
+
+  /* ================== Render ================== */
   return (
     <div className="relative h-screen flex flex-col items-center px-4 py-8 overflow-hidden">
       {/* Volver */}
@@ -618,8 +812,8 @@ export default function ReportsPage() {
             <table className="min-w-[1400px] table-auto border-collapse text-sm text-gray-800">
               <thead className="bg-gray-100 text-gray-700">
                 <tr>
-                  {COLS.map((c) => (
-                    <th key={c.key} className={c.className}>{c.label}</th>
+                  {columnOrder.map((k) => (
+                    <th key={k} className={COL_MAP[k].className}>{COL_MAP[k].label}</th>
                   ))}
                 </tr>
               </thead>
@@ -627,28 +821,6 @@ export default function ReportsPage() {
               <tbody>
                 {paginatedReports.map((report) => {
                   const derived = styleForStateValue(report.state);
-
-                  const rowCells: ReactNode[] = [
-                    report.request || '-',
-                    report.number || '-',
-                    formatReportDate(report.reportdate),
-                    <div className="h-12 overflow-y-auto flex items-center justify-center" key="desc">{report.description || '-'}</div>,
-                    report.pointofsell || '-',
-                    <LinkCell value={report.quotation} key="quotation" />,
-                    report.deliverycertificate || '-',
-                    <span
-                      key="state"
-                      className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold"
-                      style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}
-                    >
-                      {report.state || '-'}
-                    </span>,
-                    report.bill || '-',
-                    report.servicename || '-',
-                    report.servicedescription || '-',
-                    <LinkCell value={report.asesorias} key="asesorias" />,
-                  ];
-
                   const rowStyle: RowStyle = {
                     ['--row-bg']: derived.rowBg,
                     ['--row-hover']: derived.rowHover,
@@ -665,8 +837,10 @@ export default function ReportsPage() {
                         setShowModal(true);
                       }}
                     >
-                      {rowCells.map((content, i) => (
-                        <td key={i} className={COLS[i].className}>{content}</td>
+                      {columnOrder.map((k) => (
+                        <td key={k} className={COL_MAP[k].className}>
+                          {cellFor(report, k, derived)}
+                        </td>
                       ))}
                     </tr>
                   );
@@ -948,10 +1122,7 @@ export default function ReportsPage() {
               <div className="flex items-center gap-2">
                 {configView !== 'menu' && (
                   <button
-                    onClick={() => {
-                      if (configView === 'colors') void flushColorPrefs();
-                      setConfigView('menu');
-                    }}
+                    onClick={() => { void flushPrefs(); setConfigView('menu'); }}
                     className="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer"
                   >
                     Atrás
@@ -960,7 +1131,7 @@ export default function ReportsPage() {
                 <h2 className="text-lg font-semibold text-black">Configuraciones</h2>
               </div>
               <button
-                onClick={() => { void flushColorPrefs(); setShowConfig(false); }}
+                onClick={() => { void flushPrefs(); setShowConfig(false); }}
                 className="px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
               >
                 Cerrar
@@ -968,7 +1139,7 @@ export default function ReportsPage() {
             </div>
 
             {/* Body */}
-            <div className="px-6 py-4 overflow-y-auto">
+            <div ref={configBodyRef} className="px-6 py-4 overflow-y-auto">
               {configView === 'menu' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <button
@@ -980,19 +1151,109 @@ export default function ReportsPage() {
                   </button>
 
                   <button
-                    onClick={() => setConfigView('unnamed')}
+                    onClick={() => setConfigView('organize')}
                     className="cursor-pointer text-left p-4 border rounded-xl hover:shadow-md transition bg-white"
                   >
-                    <div className="font-medium text-gray-900">Unnamed</div>
-                    <div className="text-sm text-gray-600">Opción placeholder.</div>
+                    <div className="font-medium text-gray-900">Organizar columnas</div>
+                    <div className="text-sm text-gray-600">Cambia el orden de las columnas de la tabla</div>
                   </button>
                 </div>
               )}
 
-              {configView === 'unnamed' && (
+              {configView === 'organize' && (
                 <div className="text-gray-700">
-                  <p className="mb-2 font-medium">Unnamed</p>
-                  <p className="text-sm">Aquí puedes montar lo que necesites más adelante.</p>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm">Arrastra para reordenar. También puedes usar los botones.</p>
+                    <button
+                      onClick={() => { setColumnOrder([...DEFAULT_COLUMN_ORDER]); markOrderDirty(); }}
+                      className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-3 py-1.5 rounded-md"
+                    >
+                      Restablecer orden
+                    </button>
+                  </div>
+
+                  <ul
+                    className="space-y-2"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      autoScrollOnDrag(e);
+                      // si no hay target específico, mantenemos el dragOverIndex actual
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragIndexRef.current === null || dragOverIndex === null) return;
+                      let from = dragIndexRef.current;
+                      let to = dragOverIndex;
+                      if (to > from) to -= 1; // ajuste por extracción previa
+                      if (from !== to) moveIndex(from, to);
+                      dragIndexRef.current = null;
+                      setDraggingKey(null);
+                      setDragOverIndex(null);
+                    }}
+                  >
+                    {/* indicador al inicio */}
+                    <DropIndicator show={dragOverIndex === 0} />
+
+                    {columnOrder.map((k, idx) => (
+                      <li
+                        key={k}
+                        draggable
+                        onDragStart={(e) => {
+                          dragIndexRef.current = idx;
+                          setDraggingKey(k);
+                          setDragOverIndex(idx);
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragEnd={() => {
+                          setDraggingKey(null);
+                          setDragOverIndex(null);
+                          dragIndexRef.current = null;
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          autoScrollOnDrag(e);
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const mid = rect.top + rect.height / 2;
+                          const index = e.clientY > mid ? idx + 1 : idx;
+                          if (dragOverIndex !== index) setDragOverIndex(index);
+                        }}
+                        aria-grabbed={draggingKey === k}
+                        className={`flex items-center justify-between border rounded-lg p-2 shadow-sm bg-white transition
+                          ${draggingKey === k
+                            ? 'ring-2 ring-blue-400 bg-blue-50 scale-[1.01] opacity-90 cursor-grabbing'
+                            : 'hover:bg-gray-50 cursor-grab'}
+                        `}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-gray-400 select-none">⋮⋮</span>
+                          <span className="text-sm font-medium">{COL_MAP[k].label}</span>
+                          <span className="text-[10px] text-gray-400 px-2 py-0.5 rounded border">{k}</span>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              if (idx > 0) moveIndex(idx, idx - 1);
+                            }}
+                            className="cursor-pointer text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (idx < columnOrder.length - 1) moveIndex(idx, idx + 1);
+                            }}
+                            className="cursor-pointer text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+
+                    {/* indicador al final */}
+                    <DropIndicator show={dragOverIndex === columnOrder.length} />
+                  </ul>
                 </div>
               )}
 
@@ -1097,69 +1358,6 @@ export default function ReportsPage() {
       s = `#${r}${r}${g}${g}${b}${b}`;
     }
     return s.toUpperCase();
-  }
-
-  async function persistColors(next: Record<BaseStateKey, string>) {
-    if (!auth.currentUser) return;
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      await fetch('/api/admin-user-prefs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ stateColors: next }),
-      });
-    } catch {
-      // no bloquear UI si falla
-    }
-  }
-
-  // Marca sucio y actualiza, sin llamar a la API.
-  function markColorsDirty() {
-    hasColorChangesRef.current = true;
-  }
-
-  async function flushColorPrefs() {
-    if (hasColorChangesRef.current) {
-      await persistColors(stateBaseColors);
-      hasColorChangesRef.current = false;
-    }
-  }
-
-  function handleColorChange(key: BaseStateKey, hex: string) {
-    const n = normalizeHex(hex);
-    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-    markColorsDirty();
-  }
-
-  function handleHexTyping(key: BaseStateKey, raw: string) {
-    if (/^#?[0-9a-fA-F]{0,6}$/.test(raw.trim())) {
-      if (/^#?[0-9a-fA-F]{6}$/.test(raw.trim())) {
-        const n = normalizeHex(raw);
-        setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-        markColorsDirty();
-      }
-    }
-  }
-
-  function commitHex(key: BaseStateKey, raw: string) {
-    const n = normalizeHex(raw);
-    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-    markColorsDirty();
-  }
-
-  function resetOne(key: BaseStateKey) {
-    const def = DEFAULT_BASE_COLORS[key];
-    setStateBaseColors((prev) => ({ ...prev, [key]: def }));
-    markColorsDirty();
-  }
-
-  function resetAll() {
-    const all = { ...DEFAULT_BASE_COLORS };
-    setStateBaseColors(all);
-    markColorsDirty();
   }
 }
 
