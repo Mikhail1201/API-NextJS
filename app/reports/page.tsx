@@ -163,6 +163,9 @@ const BASE_COLS = [
 
 type ColKey = typeof BASE_COLS[number]['key'];
 
+/* Clave de almacenamiento local para orden de columnas */  // ⬅️
+const LOCAL_ORDER_KEY = 'reports_columnOrder_v1';
+
 /* ================== Componente principal ================== */
 
 export default function ReportsPage() {
@@ -208,6 +211,20 @@ export default function ReportsPage() {
   const organizeScrollRef = useRef<HTMLDivElement | null>(null);
 
   const db = getFirestore();
+
+  /* ---------- Cargar orden de columnas desde localStorage al iniciar ---------- */ // ⬅️
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_ORDER_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as string[];
+        const normalized = normalizeColumnOrder(parsed);
+        setColumnOrder(normalized);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   /* ---------- helpers existentes ---------- */
   const formatReportDate = (val: string | { seconds: number } | undefined) => {
@@ -313,14 +330,18 @@ export default function ReportsPage() {
             });
             setStateBaseColors(merged);
 
-            // Orden de columnas
+            // Orden de columnas (API tiene prioridad sobre localStorage)
             if (Array.isArray(json.columnOrder)) {
-              setColumnOrder(normalizeColumnOrder(json.columnOrder));
+              const normalized = normalizeColumnOrder(json.columnOrder);
+              setColumnOrder(normalized);
+              try {
+                localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(normalized)); // ⬅️
+              } catch {}
             }
           }
         }
       } catch {
-        // si falla, seguimos con defaults
+        // si falla, seguimos con defaults/local
       }
     };
 
@@ -526,6 +547,9 @@ export default function ReportsPage() {
       await persistAllPrefs(stateBaseColors, columnOrder);
       hasColorChangesRef.current = false;
       hasOrderChangesRef.current = false;
+      try {
+        localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(columnOrder)); // ⬅️
+      } catch {}
     }
   }
 
@@ -1184,16 +1208,13 @@ export default function ReportsPage() {
                               if (toIndex > columnOrder.length) toIndex = columnOrder.length;
 
                               if (fromIndex === toIndex || fromIndex + 1 === toIndex) {
-                                // no-op (misma posición)
                                 setDragKey(null);
                                 setHoverIndex(null);
                                 return;
                               }
 
                               const next = columnOrder.slice();
-                              // quitar
                               const [moved] = next.splice(fromIndex, 1);
-                              // reinsertar
                               const actualTo = fromIndex < toIndex ? toIndex - 1 : toIndex;
                               next.splice(actualTo, 0, moved as ColKey);
 
