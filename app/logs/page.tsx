@@ -124,7 +124,7 @@ export default function LogsPage() {
       </div>
 
       {/* Contenedor con altura fija para estabilidad visual */}
-      <div className="z-10 bg-white w-full max-w-4xl rounded-xl shadow-xl p-4 h-[500px] flex flex-col">
+      <div className="z-10 bg-white w-full max-w-4xl rounded-xl shadow-xl p-4 h-[45vh] md:h-[70vh] flex flex-col">
         {/* Área scrollable que mantiene el alto entre páginas */}
         <div className="flex-1 overflow-auto">
           <table className="w-full table-fixed border-collapse">
