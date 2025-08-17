@@ -145,8 +145,8 @@ function pickStateKey(raw?: string): BaseStateKey | null {
   return null;
 }
 
-/* ================== Columnas ================== */
-const COL_DEFS = [
+/* ================== Columnas base y orden ================== */
+const BASE_COLS = [
   { key: 'request', label: 'Solicitud/Aviso', className: 'px-2 py-1 text-center min-w-[120px]' },
   { key: 'number', label: 'Presupuesto', className: 'px-2 py-1 text-center min-w-[120px]' },
   { key: 'reportdate', label: 'Fecha de Reporte', className: 'px-2 py-1 text-center min-w-[120px] whitespace-nowrap' },
@@ -161,17 +161,7 @@ const COL_DEFS = [
   { key: 'asesorias', label: 'Asesorías', className: 'px-2 py-1 text-center min-w-[180px]' },
 ] as const;
 
-type ColKey = typeof COL_DEFS[number]['key'];
-
-const COL_MAP: Record<ColKey, { label: string; className: string }> = COL_DEFS.reduce(
-  (acc, c) => {
-    acc[c.key] = { label: c.label, className: c.className };
-    return acc;
-  },
-  {} as Record<ColKey, { label: string; className: string }>
-);
-
-const DEFAULT_COLUMN_ORDER: ColKey[] = COL_DEFS.map((c) => c.key);
+type ColKey = typeof BASE_COLS[number]['key'];
 
 /* ================== Componente principal ================== */
 
@@ -203,17 +193,19 @@ export default function ReportsPage() {
   );
 
   // Orden de columnas (por usuario)
-  const [columnOrder, setColumnOrder] = useState<ColKey[]>(DEFAULT_COLUMN_ORDER);
+  const [columnOrder, setColumnOrder] = useState<ColKey[]>(
+    () => BASE_COLS.map(c => c.key)
+  );
 
-  // Flags para guardar solo al cerrar/volver
+  // Flags de "hay cambios sin guardar"
   const hasColorChangesRef = useRef(false);
   const hasOrderChangesRef = useRef(false);
 
-  // --- Drag visual + autoscroll + guía ---
-  const [draggingKey, setDraggingKey] = useState<ColKey | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const dragIndexRef = useRef<number | null>(null);
-  const configBodyRef = useRef<HTMLDivElement | null>(null);
+  // Drag state para "Organizar"
+  const [dragKey, setDragKey] = useState<ColKey | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hoverBefore, setHoverBefore] = useState<boolean>(true);
+  const organizeScrollRef = useRef<HTMLDivElement | null>(null);
 
   const db = getFirestore();
 
@@ -313,17 +305,18 @@ export default function ReportsPage() {
             };
 
             // Colores
-            const storedColors = json.stateColors || {};
+            const stored = json.stateColors || {};
             const merged: Record<BaseStateKey, string> = { ...DEFAULT_BASE_COLORS };
             (KNOWN_STATES as readonly BaseStateKey[]).forEach((k) => {
-              const val = storedColors[k];
+              const val = stored[k];
               merged[k] = typeof val === 'string' ? normalizeHex(val) : DEFAULT_BASE_COLORS[k];
             });
             setStateBaseColors(merged);
 
-            // Orden columnas
-            const sanitized = sanitizeOrder(json.columnOrder);
-            setColumnOrder(sanitized);
+            // Orden de columnas
+            if (Array.isArray(json.columnOrder)) {
+              setColumnOrder(normalizeColumnOrder(json.columnOrder));
+            }
           }
         }
       } catch {
@@ -508,171 +501,43 @@ export default function ReportsPage() {
     if (currentPage > totalPages) setCurrentPage(1);
   }, [filteredReports, totalPages, currentPage]);
 
+  // Columnas realmente pintadas según preferencias
+  const orderedCols = useMemo(() => {
+    const baseKeys = BASE_COLS.map(c => c.key);
+    const filtered = columnOrder.filter((k): k is ColKey => (baseKeys as string[]).includes(k));
+    const missing = baseKeys.filter(k => !filtered.includes(k)) as ColKey[];
+    const finalKeys = [...filtered, ...missing];
+    return finalKeys.map(k => BASE_COLS.find(c => c.key === k)!);
+  }, [columnOrder]);
+
   if (loading || !roleChecked) return null;
 
   // Tipo seguro para variables CSS personalizadas
   type RowStyle = CSSProperties & { ['--row-bg']?: string; ['--row-hover']?: string };
 
-  /* ====== Render helpers de celdas ====== */
-  function cellFor(report: Report, key: ColKey, derived: ReturnType<typeof styleForStateValue>): ReactNode {
-    switch (key) {
-      case 'request':
-        return report.request || '-';
-      case 'number':
-        return report.number || '-';
-      case 'reportdate':
-        return formatReportDate(report.reportdate);
-      case 'description':
-        return <div className="h-12 overflow-y-auto flex items-center justify-center">{report.description || '-'}</div>;
-      case 'pointofsell':
-        return report.pointofsell || '-';
-      case 'quotation':
-        return <LinkCell value={report.quotation} />;
-      case 'deliverycertificate':
-        return report.deliverycertificate || '-';
-      case 'state':
-        return (
-          <span
-            className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold"
-            style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}
-          >
-            {report.state || '-'}
-          </span>
-        );
-      case 'bill':
-        return report.bill || '-';
-      case 'servicename':
-        return report.servicename || '-';
-      case 'servicedescription':
-        return report.servicedescription || '-';
-      case 'asesorias':
-        return <LinkCell value={report.asesorias} />;
-      default:
-        return '-';
-    }
-  }
+  /* ================== Handlers de Config ================== */
+  const handleOpenConfig = () => {
+    setShowConfig(true);
+    setConfigView('menu');
+  };
 
-  /* ====== Persistencia de prefs (colores + orden) ====== */
-  function sanitizeOrder(input?: unknown): ColKey[] {
-    if (!Array.isArray(input)) return [...DEFAULT_COLUMN_ORDER];
-    const validSet = new Set<ColKey>(DEFAULT_COLUMN_ORDER);
-    const dedup: ColKey[] = [];
-    for (const v of input) {
-      if (validSet.has(v as ColKey) && !dedup.includes(v as ColKey)) dedup.push(v as ColKey);
-    }
-    // agrega faltantes al final
-    for (const k of DEFAULT_COLUMN_ORDER) if (!dedup.includes(k)) dedup.push(k);
-    return dedup;
-  }
-
-  async function persistPrefs(next: {
-    stateColors: Record<BaseStateKey, string>;
-    columnOrder: ColKey[];
-  }) {
-    if (!auth.currentUser) return;
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      await fetch('/api/admin-user-prefs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(next),
-      });
-    } catch {
-      // no bloquear UI si falla
-    }
-  }
-
-  function markColorsDirty() {
-    hasColorChangesRef.current = true;
-  }
-  function markOrderDirty() {
-    hasOrderChangesRef.current = true;
-  }
-
-  async function flushPrefs() {
+  async function flushPrefsIfNeeded() {
     if (hasColorChangesRef.current || hasOrderChangesRef.current) {
-      await persistPrefs({
-        stateColors: stateBaseColors,
-        columnOrder,
-      });
+      await persistAllPrefs(stateBaseColors, columnOrder);
       hasColorChangesRef.current = false;
       hasOrderChangesRef.current = false;
     }
   }
 
-  /* ====== Handlers de colores ====== */
-  function handleColorChange(key: BaseStateKey, hex: string) {
-    const n = normalizeHex(hex);
-    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-    markColorsDirty();
-  }
+  const handleBackFromSubview = async () => {
+    await flushPrefsIfNeeded();
+    setConfigView('menu');
+  };
 
-  function handleHexTyping(key: BaseStateKey, raw: string) {
-    if (/^#?[0-9a-fA-F]{0,6}$/.test(raw.trim())) {
-      if (/^#?[0-9a-fA-F]{6}$/.test(raw.trim())) {
-        const n = normalizeHex(raw);
-        setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-        markColorsDirty();
-      }
-    }
-  }
-
-  function commitHex(key: BaseStateKey, raw: string) {
-    const n = normalizeHex(raw);
-    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-    markColorsDirty();
-  }
-
-  function resetOne(key: BaseStateKey) {
-    const def = DEFAULT_BASE_COLORS[key];
-    setStateBaseColors((prev) => ({ ...prev, [key]: def }));
-    markColorsDirty();
-  }
-
-  function resetAll() {
-    const all = { ...DEFAULT_BASE_COLORS };
-    setStateBaseColors(all);
-    markColorsDirty();
-  }
-
-  /* ====== Drag helpers (organizar columnas) ====== */
-  function autoScrollOnDrag(e: React.DragEvent) {
-    const container = configBodyRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const y = e.clientY;
-    const threshold = 40; // px
-    const step = 10;
-
-    if (y < rect.top + threshold) {
-      container.scrollBy({ top: -step, behavior: 'auto' });
-    } else if (y > rect.bottom - threshold) {
-      container.scrollBy({ top: step, behavior: 'auto' });
-    }
-  }
-
-  function moveIndex(from: number, to: number) {
-    setColumnOrder((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
-    });
-    markOrderDirty();
-  }
-
-  function DropIndicator({ show }: { show: boolean }) {
-    if (!show) return null;
-    return (
-      <div className="h-3 -my-1">
-        <div className="h-[3px] rounded bg-blue-500/80 shadow" />
-      </div>
-    );
-  }
+  const handleCloseConfig = async () => {
+    await flushPrefsIfNeeded();
+    setShowConfig(false);
+  };
 
   /* ================== Render ================== */
   return (
@@ -691,7 +556,7 @@ export default function ReportsPage() {
 
       {/* Configuración (abajo-derecha) */}
       <button
-        onClick={() => { setShowConfig(true); setConfigView('menu'); }}
+        onClick={handleOpenConfig}
         className="fixed bottom-4 right-4 z-20 bg-white/90 hover:bg-white text-blue-600 p-3 rounded-full shadow-md transition cursor-pointer"
         aria-label="Abrir configuraciones"
         title="Configuraciones"
@@ -812,8 +677,8 @@ export default function ReportsPage() {
             <table className="min-w-[1400px] table-auto border-collapse text-sm text-gray-800">
               <thead className="bg-gray-100 text-gray-700">
                 <tr>
-                  {columnOrder.map((k) => (
-                    <th key={k} className={COL_MAP[k].className}>{COL_MAP[k].label}</th>
+                  {orderedCols.map((c) => (
+                    <th key={c.key} className={c.className}>{c.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -821,6 +686,33 @@ export default function ReportsPage() {
               <tbody>
                 {paginatedReports.map((report) => {
                   const derived = styleForStateValue(report.state);
+
+                  const rowMap: Record<ColKey, ReactNode> = {
+                    request: report.request || '-',
+                    number: report.number || '-',
+                    reportdate: formatReportDate(report.reportdate),
+                    description: (
+                      <div className="h-12 overflow-y-auto flex items-center justify-center">
+                        {report.description || '-'}
+                      </div>
+                    ),
+                    pointofsell: report.pointofsell || '-',
+                    quotation: <LinkCell value={report.quotation} />,
+                    deliverycertificate: report.deliverycertificate || '-',
+                    state: (
+                      <span
+                        className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}
+                      >
+                        {report.state || '-'}
+                      </span>
+                    ),
+                    bill: report.bill || '-',
+                    servicename: report.servicename || '-',
+                    servicedescription: report.servicedescription || '-',
+                    asesorias: <LinkCell value={report.asesorias} />,
+                  };
+
                   const rowStyle: RowStyle = {
                     ['--row-bg']: derived.rowBg,
                     ['--row-hover']: derived.rowHover,
@@ -837,9 +729,9 @@ export default function ReportsPage() {
                         setShowModal(true);
                       }}
                     >
-                      {columnOrder.map((k) => (
-                        <td key={k} className={COL_MAP[k].className}>
-                          {cellFor(report, k, derived)}
+                      {orderedCols.map((c) => (
+                        <td key={c.key} className={c.className}>
+                          {rowMap[c.key]}
                         </td>
                       ))}
                     </tr>
@@ -1122,7 +1014,7 @@ export default function ReportsPage() {
               <div className="flex items-center gap-2">
                 {configView !== 'menu' && (
                   <button
-                    onClick={() => { void flushPrefs(); setConfigView('menu'); }}
+                    onClick={handleBackFromSubview}
                     className="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer"
                   >
                     Atrás
@@ -1131,7 +1023,7 @@ export default function ReportsPage() {
                 <h2 className="text-lg font-semibold text-black">Configuraciones</h2>
               </div>
               <button
-                onClick={() => { void flushPrefs(); setShowConfig(false); }}
+                onClick={handleCloseConfig}
                 className="px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
               >
                 Cerrar
@@ -1139,7 +1031,7 @@ export default function ReportsPage() {
             </div>
 
             {/* Body */}
-            <div ref={configBodyRef} className="px-6 py-4 overflow-y-auto">
+            <div className="px-6 py-4 overflow-y-auto">
               {configView === 'menu' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <button
@@ -1155,105 +1047,8 @@ export default function ReportsPage() {
                     className="cursor-pointer text-left p-4 border rounded-xl hover:shadow-md transition bg-white"
                   >
                     <div className="font-medium text-gray-900">Organizar columnas</div>
-                    <div className="text-sm text-gray-600">Cambia el orden de las columnas de la tabla</div>
+                    <div className="text-sm text-gray-600">Reordena visualmente las columnas de la tabla</div>
                   </button>
-                </div>
-              )}
-
-              {configView === 'organize' && (
-                <div className="text-gray-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm">Arrastra para reordenar. También puedes usar los botones.</p>
-                    <button
-                      onClick={() => { setColumnOrder([...DEFAULT_COLUMN_ORDER]); markOrderDirty(); }}
-                      className="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm px-3 py-1.5 rounded-md"
-                    >
-                      Restablecer orden
-                    </button>
-                  </div>
-
-                  <ul
-                    className="space-y-2"
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      autoScrollOnDrag(e);
-                      // si no hay target específico, mantenemos el dragOverIndex actual
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (dragIndexRef.current === null || dragOverIndex === null) return;
-                      const from = dragIndexRef.current;
-                      let to = dragOverIndex;
-                      if (to > from) to -= 1; // ajuste por extracción previa
-                      if (from !== to) moveIndex(from, to);
-                      dragIndexRef.current = null;
-                      setDraggingKey(null);
-                      setDragOverIndex(null);
-                    }}
-                  >
-                    {/* indicador al inicio */}
-                    <DropIndicator show={dragOverIndex === 0} />
-
-                    {columnOrder.map((k, idx) => (
-                      <li
-                        key={k}
-                        draggable
-                        onDragStart={(e) => {
-                          dragIndexRef.current = idx;
-                          setDraggingKey(k);
-                          setDragOverIndex(idx);
-                          e.dataTransfer.effectAllowed = 'move';
-                        }}
-                        onDragEnd={() => {
-                          setDraggingKey(null);
-                          setDragOverIndex(null);
-                          dragIndexRef.current = null;
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          autoScrollOnDrag(e);
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const mid = rect.top + rect.height / 2;
-                          const index = e.clientY > mid ? idx + 1 : idx;
-                          if (dragOverIndex !== index) setDragOverIndex(index);
-                        }}
-                        aria-grabbed={draggingKey === k}
-                        className={`flex items-center justify-between border rounded-lg p-2 shadow-sm bg-white transition
-                          ${draggingKey === k
-                            ? 'ring-2 ring-blue-400 bg-blue-50 scale-[1.01] opacity-90 cursor-grabbing'
-                            : 'hover:bg-gray-50 cursor-grab'}
-                        `}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-gray-400 select-none">⋮⋮</span>
-                          <span className="text-sm font-medium">{COL_MAP[k].label}</span>
-                          <span className="text-[10px] text-gray-400 px-2 py-0.5 rounded border">{k}</span>
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              if (idx > 0) moveIndex(idx, idx - 1);
-                            }}
-                            className="cursor-pointer text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (idx < columnOrder.length - 1) moveIndex(idx, idx + 1);
-                            }}
-                            className="cursor-pointer text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-
-                    {/* indicador al final */}
-                    <DropIndicator show={dragOverIndex === columnOrder.length} />
-                  </ul>
                 </div>
               )}
 
@@ -1322,6 +1117,135 @@ export default function ReportsPage() {
                   </div>
                 </div>
               )}
+
+              {configView === 'organize' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">
+                    Arrastra las columnas para cambiar el orden. Suelta cuando veas la línea guía entre elementos.
+                  </p>
+
+                  <div
+                    ref={organizeScrollRef}
+                    className="max-h-[50vh] overflow-y-auto border rounded-lg p-2 bg-white"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      const container = organizeScrollRef.current;
+                      if (!container) return;
+                      const rect = container.getBoundingClientRect();
+                      const y = e.clientY;
+
+                      // Auto-scroll suave
+                      const edge = 36; // px
+                      if (y - rect.top < edge) {
+                        container.scrollBy({ top: -8, behavior: 'auto' });
+                      } else if (rect.bottom - y < edge) {
+                        container.scrollBy({ top: 8, behavior: 'auto' });
+                      }
+                    }}
+                  >
+                    {columnOrder.map((key, i) => {
+                      const col = BASE_COLS.find(c => c.key === key)!;
+                      return (
+                        <div key={key} className="relative">
+                          {/* Línea guía antes del item */}
+                          {dragKey && hoverIndex === i && hoverBefore && (
+                            <div className="absolute -top-1 left-0 right-0 h-0.5 bg-blue-500 rounded-full" />
+                          )}
+
+                          <div
+                            draggable
+                            onDragStart={(e) => {
+                              setDragKey(key);
+                              e.dataTransfer.effectAllowed = 'move';
+                              e.dataTransfer.setData('text/plain', key);
+                            }}
+                            onDragEnd={() => {
+                              setDragKey(null);
+                              setHoverIndex(null);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              if (!dragKey) return;
+                              const target = e.currentTarget as HTMLDivElement;
+                              const rect = target.getBoundingClientRect();
+                              const middle = rect.top + rect.height / 2;
+                              setHoverIndex(i);
+                              setHoverBefore(e.clientY < middle);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const movingKey = (e.dataTransfer.getData('text/plain') || dragKey) as ColKey | null;
+                              if (!movingKey) return;
+
+                              const fromIndex = columnOrder.indexOf(movingKey);
+                              if (fromIndex === -1) return;
+
+                              let toIndex = i + (hoverBefore ? 0 : 1);
+                              if (toIndex > columnOrder.length) toIndex = columnOrder.length;
+
+                              if (fromIndex === toIndex || fromIndex + 1 === toIndex) {
+                                // no-op (misma posición)
+                                setDragKey(null);
+                                setHoverIndex(null);
+                                return;
+                              }
+
+                              const next = columnOrder.slice();
+                              // quitar
+                              const [moved] = next.splice(fromIndex, 1);
+                              // reinsertar
+                              const actualTo = fromIndex < toIndex ? toIndex - 1 : toIndex;
+                              next.splice(actualTo, 0, moved as ColKey);
+
+                              setColumnOrder(next);
+                              hasOrderChangesRef.current = true;
+                              setDragKey(null);
+                              setHoverIndex(null);
+                            }}
+                            className={`flex items-center justify-between gap-3 rounded-md border p-2 mb-2 cursor-grab select-none ${
+                              dragKey === key ? 'opacity-80 ring-2 ring-blue-400 bg-blue-50' : 'bg-gray-50 hover:bg-gray-100'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Handle */}
+                              <span className="text-gray-500">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                  <path d="M10 4H4V10H10V4Z M20 4H14V10H20V4Z M10 14H4V20H10V14Z M20 14H14V20H20V14Z" stroke="currentColor" strokeWidth="1" />
+                                </svg>
+                              </span>
+                              <span className="font-medium text-gray-800">{col.label}</span>
+                            </div>
+                            <span className="text-xs text-gray-500">{key}</span>
+                          </div>
+
+                          {/* Línea guía después del item */}
+                          {dragKey && hoverIndex === i && !hoverBefore && (
+                            <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-blue-500 rounded-full" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => {
+                        setColumnOrder(BASE_COLS.map(c => c.key));
+                        hasOrderChangesRef.current = true;
+                      }}
+                      className="cursor-pointer px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm"
+                    >
+                      Restablecer orden predeterminado
+                    </button>
+                    <button
+                      onClick={handleBackFromSubview}
+                      className="cursor-pointer px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm"
+                    >
+                      Guardar y volver
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1358,6 +1282,72 @@ export default function ReportsPage() {
       s = `#${r}${r}${g}${g}${b}${b}`;
     }
     return s.toUpperCase();
+  }
+
+  function normalizeColumnOrder(raw: string[]): ColKey[] {
+    const baseKeys = BASE_COLS.map(c => c.key);
+    const filtered = raw.filter((k): k is ColKey => (baseKeys as string[]).includes(k));
+    const missing = baseKeys.filter(k => !filtered.includes(k as ColKey)) as ColKey[];
+    return [...filtered, ...missing];
+  }
+
+  async function persistAllPrefs(nextColors: Record<BaseStateKey, string>, nextOrder: ColKey[]) {
+    if (!auth.currentUser) return;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      await fetch('/api/admin-user-prefs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          stateColors: nextColors,
+          columnOrder: nextOrder,
+        }),
+      });
+    } catch {
+      // no bloquear UI si falla
+    }
+  }
+
+  // Marca sucio y actualiza, sin llamar a la API.
+  function markColorsDirty() {
+    hasColorChangesRef.current = true;
+  }
+
+  function handleColorChange(key: BaseStateKey, hex: string) {
+    const n = normalizeHex(hex);
+    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+    markColorsDirty();
+  }
+
+  function handleHexTyping(key: BaseStateKey, raw: string) {
+    if (/^#?[0-9a-fA-F]{0,6}$/.test(raw.trim())) {
+      if (/^#?[0-9a-fA-F]{6}$/.test(raw.trim())) {
+        const n = normalizeHex(raw);
+        setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+        markColorsDirty();
+      }
+    }
+  }
+
+  function commitHex(key: BaseStateKey, raw: string) {
+    const n = normalizeHex(raw);
+    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
+    markColorsDirty();
+  }
+
+  function resetOne(key: BaseStateKey) {
+    const def = DEFAULT_BASE_COLORS[key];
+    setStateBaseColors((prev) => ({ ...prev, [key]: def }));
+    markColorsDirty();
+  }
+
+  function resetAll() {
+    const all = { ...DEFAULT_BASE_COLORS };
+    setStateBaseColors(all);
+    markColorsDirty();
   }
 }
 
