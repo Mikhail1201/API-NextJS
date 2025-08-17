@@ -216,7 +216,7 @@ export default function ExportReportsPage() {
       ws.column(c).width(Math.max(14, KEY_TO_LABEL[key].length + 4));
     });
 
-    // Filas de datos
+    // Filas de datos (se asume que llegan ya ordenados)
     data.forEach((r, i) => {
       const row = i + 2;
       const ms = toMillis(r.reportdate);
@@ -250,26 +250,8 @@ export default function ExportReportsPage() {
       }
     });
 
-    // Congelar encabezados
-    ws.freezePanes(2, 1);
-
-    // Hoja 2: leyenda de colores
-    const entries = Object.entries(prefs?.stateColors || {});
-    if (entries.length) {
-      const legend = workbook.addSheet('Colores por Estado');
-      legend.cell(1, 1).value('Estado').style({ bold: true, border: true, fill: 'EFEFEF' });
-      legend.cell(1, 2).value('HEX').style({ bold: true, border: true, fill: 'EFEFEF' });
-      legend.column(1).width(24);
-      legend.column(2).width(12);
-
-      entries.forEach(([estado, hex], idx) => {
-        const row = idx + 2;
-        const norm = normalizeHexNoHash(hex) || 'FFFFFF';
-        legend.cell(row, 1).value(estado).style({ border: true });
-        legend.cell(row, 2).value(`#${norm}`).style({ border: true });
-        legend.range(`A${row}:B${row}`).style({ fill: norm, fontColor: textForBg(norm) });
-      });
-    }
+    // ❌ Sin congelar encabezados/columnas
+    // ws.freezePanes(2, 1);
 
     const blob = await workbook.outputAsync();
     saveAs(blob, `${fileName}.xlsx`);
@@ -318,26 +300,38 @@ export default function ExportReportsPage() {
       if (mode === 'until') {
         if (!selectedDate) return;
         const reports = await fetchReportsUntil(selectedDate);
-        await exportWithStyles(reports, `reportes_hasta_${selectedDate}`, prefs);
+        // 🔽 ordenar por fecha DESC
+        const sorted = reports.sort(
+          (a, b) => (toMillis(b.reportdate) ?? 0) - (toMillis(a.reportdate) ?? 0)
+        );
+        await exportWithStyles(sorted, `reportes_hasta_${selectedDate}`, prefs);
         return;
       }
 
       if (mode === 'day') {
         if (!selectedDate) return;
         const reports = await fetchReportsOnlyDay(selectedDate);
-        await exportWithStyles(reports, `reportes_solo_${selectedDate}`, prefs);
+        // 🔽 ordenar por fecha DESC
+        const sorted = reports.sort(
+          (a, b) => (toMillis(b.reportdate) ?? 0) - (toMillis(a.reportdate) ?? 0)
+        );
+        await exportWithStyles(sorted, `reportes_solo_${selectedDate}`, prefs);
         return;
       }
 
       if (mode === 'range') {
         if (!rangeStart || !rangeEnd) return;
         const reports = await fetchReportsUntil(rangeEnd);
-        const startMs = Date.parse(rangeStart);
-        const endMs = Date.parse(rangeEnd) + 24 * 60 * 60 * 1000 - 1;
-        const filtered = reports.filter((r) => {
-          const ms = toMillis(r.reportdate);
-          return typeof ms === 'number' && ms >= startMs && ms <= endMs;
-        });
+        // 🔒 intervalo cerrado [start,end]
+        const startMs = new Date(rangeStart).setHours(0, 0, 0, 0);
+        const endMs = new Date(rangeEnd).setHours(23, 59, 59, 999);
+        const filtered = reports
+          .filter((r) => {
+            const ms = toMillis(r.reportdate);
+            return typeof ms === 'number' && ms >= startMs && ms <= endMs;
+          })
+          // 🔽 ordenar por fecha DESC
+          .sort((a, b) => (toMillis(b.reportdate) ?? 0) - (toMillis(a.reportdate) ?? 0));
         await exportWithStyles(filtered, `reportes_${rangeStart}_a_${rangeEnd}`, prefs);
         return;
       }
@@ -351,12 +345,16 @@ export default function ExportReportsPage() {
 
         const reports = await fetchReportsUntil(lastISO);
 
-        const startMs = first.getTime();
-        const endMs = new Date(last.getFullYear(), last.getMonth(), last.getDate(), 23, 59, 59, 999).getTime();
-        const filtered = reports.filter((r) => {
-          const ms = toMillis(r.reportdate);
-          return typeof ms === 'number' && ms >= startMs && ms <= endMs;
-        });
+        // 🔒 intervalo cerrado del mes completo
+        const startMs = first.setHours(0, 0, 0, 0);
+        const endMs = last.setHours(23, 59, 59, 999);
+        const filtered = reports
+          .filter((r) => {
+            const ms = toMillis(r.reportdate);
+            return typeof ms === 'number' && ms >= startMs && ms <= endMs;
+          })
+          // 🔽 ordenar por fecha DESC
+          .sort((a, b) => (toMillis(b.reportdate) ?? 0) - (toMillis(a.reportdate) ?? 0));
 
         await exportWithStyles(filtered, `reportes_mes_${selectedMonth}`, prefs);
         return;
