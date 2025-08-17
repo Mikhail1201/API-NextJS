@@ -1,4 +1,3 @@
-// app/api/user-prefs/route.js
 import admin from 'firebase-admin';
 import { getApps } from 'firebase-admin/app';
 
@@ -17,6 +16,22 @@ const KNOWN_STATES = [
   'En Ejecución',
   'Ejecutado',
   'N/A',
+];
+
+// Claves válidas de columnas (DEBEN coincidir con el cliente)
+const ALLOWED_COL_KEYS = [
+  'request',
+  'number',
+  'reportdate',
+  'description',
+  'pointofsell',
+  'quotation',
+  'deliverycertificate',
+  'state',
+  'bill',
+  'servicename',
+  'servicedescription',
+  'asesorias',
 ];
 
 // Utilidades HEX
@@ -61,10 +76,29 @@ async function getUserFromRequest(req) {
   }
 }
 
+// Sanitiza y completa el orden de columnas
+function sanitizeColumnOrder(input) {
+  if (!Array.isArray(input)) return null;
+  const seen = new Set();
+  const cleaned = [];
+  for (const key of input) {
+    if (typeof key !== 'string') continue;
+    if (!ALLOWED_COL_KEYS.includes(key)) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(key);
+  }
+  // Completar faltantes respetando orden base
+  for (const baseKey of ALLOWED_COL_KEYS) {
+    if (!seen.has(baseKey)) cleaned.push(baseKey);
+  }
+  return cleaned;
+}
+
 /**
- * GET: Lee las preferencias de colores del usuario autenticado
- * Devuelve: { stateColors: { [estado]: "#RRGGBB" } }
- * Log: leer_preferencias_usuario
+ * GET: Lee las preferencias (colores + orden columnas) del usuario autenticado
+ * Devuelve: { stateColors: { [estado]: "#RRGGBB" }, columnOrder?: string[] }
+ * (sin logs de lectura)
  */
 export async function GET(req) {
   const auth = await getUserFromRequest(req);
@@ -72,13 +106,14 @@ export async function GET(req) {
     return new Response(JSON.stringify({ error: auth.error }), { status: auth.status });
   }
 
-  const { userUid, userEmail } = auth;
+  const { userUid } = auth;
   const db = admin.firestore();
 
   try {
     const snap = await db.collection('user_prefs').doc(userUid).get();
     const data = snap.exists ? snap.data() : {};
     const rawColors = data?.stateColors || {};
+    const rawOrder = data?.columnOrder;
 
     // Sanitizar: solo estados conocidos y HEX válidos
     const stateColors = {};
@@ -87,23 +122,21 @@ export async function GET(req) {
       if (v) stateColors[k] = v;
     }
 
-    // Log de lectura
-    await db.collection('logs').add({
-      action: 'leer_preferencias_usuario',
-      details: `Preferencias de colores leídas para el usuario '${userEmail}'`,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      performedBy: userEmail,
-    });
+    // Sanitizar orden de columnas (si existe)
+    const columnOrder = sanitizeColumnOrder(rawOrder) || undefined;
 
-    return new Response(JSON.stringify({ stateColors }), { status: 200 });
+    return new Response(JSON.stringify({ stateColors, columnOrder }), { status: 200 });
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 400 });
   }
 }
 
 /**
- * POST: Actualiza las preferencias de colores del usuario autenticado
- * Body: { stateColors: { [estado]: "#RRGGBB" } }
+ * POST: Actualiza las preferencias del usuario autenticado
+ * Body: {
+ *   stateColors?: { [estado]: "#RRGGBB" },
+ *   columnOrder?: string[]
+ * }
  * Log: actualizar_preferencias_usuario
  */
 export async function POST(req) {
@@ -117,30 +150,50 @@ export async function POST(req) {
 
   try {
     const body = await req.json();
-    const incoming = body?.stateColors || {};
 
-    // Validación: sólo estados conocidos y HEX válidos
-    const toSave = {};
-    for (const [key, val] of Object.entries(incoming)) {
+    // --- Colores ---
+    const incomingColors = body?.stateColors || {};
+    const toSaveColors = {};
+    for (const [key, val] of Object.entries(incomingColors)) {
       if (!KNOWN_STATES.includes(key)) continue;
       const hex = normalizeHex(val);
-      if (hex) toSave[key] = hex;
+      if (hex) toSaveColors[key] = hex;
     }
 
-    // Guardar (merge)
-    await db.collection('user_prefs').doc(userUid).set(
-      { stateColors: toSave },
-      { merge: true }
-    );
+    // --- Orden de columnas ---
+    const incomingOrder = Array.isArray(body?.columnOrder) ? body.columnOrder : null;
+    const toSaveOrder = sanitizeColumnOrder(incomingOrder);
+
+    // Nada que guardar -> OK sin cambios
+    if (Object.keys(toSaveColors).length === 0 && !toSaveOrder) {
+      return new Response(JSON.stringify({ success: true, noop: true }), { status: 200 });
+    }
+
+    const payload = {};
+    if (Object.keys(toSaveColors).length > 0) payload.stateColors = toSaveColors;
+    if (toSaveOrder) payload.columnOrder = toSaveOrder;
+
+    await db.collection('user_prefs').doc(userUid).set(payload, { merge: true });
 
     // Log de actualización
-    const updatedKeys = Object.keys(toSave);
+    const updatedColorKeys = Object.keys(toSaveColors);
+    const detailsParts = [];
+    if (updatedColorKeys.length > 0) {
+      detailsParts.push(
+        `Colores actualizados (${updatedColorKeys.length}): ${updatedColorKeys.join(', ')}`
+      );
+    }
+    if (toSaveOrder) {
+      detailsParts.push(`columnOrder actualizado (${toSaveOrder.length} columnas)`);
+    }
+    const details =
+      detailsParts.length > 0
+        ? detailsParts.join(' | ')
+        : 'Se intentó actualizar preferencias, pero no hubo cambios válidos.';
+
     await db.collection('logs').add({
       action: 'actualizar_preferencias_usuario',
-      details:
-        updatedKeys.length > 0
-          ? `Colores actualizados para ${updatedKeys.length} estado(s): ${updatedKeys.join(', ')}`
-          : 'Se intentó actualizar preferencias, pero no hubo cambios válidos.',
+      details,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       performedBy: userEmail,
     });
