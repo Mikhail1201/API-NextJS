@@ -24,7 +24,7 @@ type ColumnKey =
 interface ReportRow {
   request?: string;
   number?: string;
-  reportdate?: string; // YYYY-MM-DD (sin hora)
+  reportdate?: string; // YYYY-MM-DD
   description?: string;
   pointofsell?: string;
   quotation?: string;
@@ -57,40 +57,24 @@ const normStr = (v?: unknown): string =>
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** Convierte celda de fecha a YYYY-MM-DD “pura” (sin hora) */
+/** Convierte celda a YYYY-MM-DD (sin hora) */
 const toLocalDateISO = (cell: unknown): string | undefined => {
-  // 1) Date nativa (SheetJS si cellDates: true)
   if (cell instanceof Date && !isNaN(cell.getTime())) {
     const y = cell.getFullYear();
     const m = pad2(cell.getMonth() + 1);
     const d = pad2(cell.getDate());
     return `${y}-${m}-${d}`;
   }
-  // 2) Serial Excel (número)
   if (typeof cell === 'number') {
     const parts = XLSX.SSF.parse_date_code(cell);
-    if (parts) {
-      const y = parts.y;
-      const m = pad2(parts.m);
-      const d = pad2(parts.d);
-      return `${y}-${m}-${d}`;
-    }
+    if (parts) return `${parts.y}-${pad2(parts.m)}-${pad2(parts.d)}`;
   }
-  // 3) String habitual
   if (typeof cell === 'string') {
     const s = cell.trim();
-    // DD/MM/YYYY
     const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m1) {
-      const d = pad2(Number(m1[1]));
-      const mo = pad2(Number(m1[2]));
-      const y = Number(m1[3]);
-      return `${y}-${mo}-${d}`;
-    }
-    // YYYY-MM-DD
+    if (m1) return `${m1[3]}-${pad2(+m1[2])}-${pad2(+m1[1])}`;
     const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m2) return s;
-    // Último intento
     const t = Date.parse(s);
     if (!isNaN(t)) {
       const dt = new Date(t);
@@ -104,10 +88,7 @@ async function readExcel(file: File): Promise<ReportRow[]> {
   const ab = await file.arrayBuffer();
   const wb = XLSX.read(ab, { type: 'array', cellDates: true });
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
-    defval: '',
-    raw: true,
-  });
+  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
 
   const get = (row: Record<string, unknown>, key: ColumnKey) => {
     const label = KEY_TO_LABEL[key];
@@ -118,9 +99,7 @@ async function readExcel(file: File): Promise<ReportRow[]> {
 
   return rows
     .map((r) => {
-      const dateCell = get(r, 'reportdate');
-      const dateISO = toLocalDateISO(dateCell);
-
+      const dateISO = toLocalDateISO(get(r, 'reportdate'));
       const out: Record<string, string | undefined> = {
         request: normStr(get(r, 'request')),
         number: normStr(get(r, 'number')),
@@ -135,12 +114,28 @@ async function readExcel(file: File): Promise<ReportRow[]> {
         servicedescription: normStr(get(r, 'servicedescription')),
         asesorias: normStr(get(r, 'asesorias')),
       };
-      // Quita undefineds
       Object.keys(out).forEach((k) => ((out as ReportRow)[k] === undefined) && delete (out as ReportRow)[k]);
       return out;
     })
     .filter((row) => Object.values(row).some((v) => v !== '' && v !== undefined && v !== null));
 }
+
+type POSPreviewResponse = {
+  success?: boolean;
+  totalUnique?: number;
+  newCount?: number;
+  newNames?: string[];
+  error?: string;
+};
+
+type ImportAPIResponse = {
+  success?: boolean;
+  importedCount?: number;
+  createdPOS?: number;
+  skippedExistingRequests?: string[];
+  invalidRows?: { request?: string; reason?: string }[];
+  error?: string;
+};
 
 export default function ImportPage() {
   const router = useRouter();
@@ -151,6 +146,14 @@ export default function ImportPage() {
   const [posList, setPosList] = useState<string[]>([]);
   const [status, setStatus] = useState<string>('');
   const [busy, setBusy] = useState(false);
+
+  // preview POS nuevos
+  const [newPOSCount, setNewPOSCount] = useState<number>(0);
+  const [newPOSNames, setNewPOSNames] = useState<string[]>([]);
+
+  // detalles del import
+  const [serverInvalid, setServerInvalid] = useState<ImportAPIResponse['invalidRows']>([]);
+  const [serverDupReqs, setServerDupReqs] = useState<string[]>([]);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
@@ -163,15 +166,26 @@ export default function ImportPage() {
     setFile(f);
     setRows([]);
     setPosList([]);
+    setNewPOSCount(0);
+    setNewPOSNames([]);
     setStatus('');
+    setServerInvalid([]);
+    setServerDupReqs([]);
   };
 
   const handlePreview = async () => {
     if (!file) return;
     setBusy(true);
     setStatus('Leyendo archivo…');
+    setServerInvalid([]);
+    setServerDupReqs([]);
+    setNewPOSCount(0);
+    setNewPOSNames([]);
+
     try {
       const data = await readExcel(file);
+
+      // POS únicos en el archivo (case-insensitive)
       const seen = new Set<string>();
       const uniques: string[] = [];
       data.forEach((r) => {
@@ -183,9 +197,35 @@ export default function ImportPage() {
           uniques.push(pos);
         }
       });
+
       setRows(data);
       setPosList(uniques);
-      setStatus(`Filas: ${data.length}. Puntos de Venta únicos: ${uniques.length}.`);
+
+      // Llamada al preview de POS en el servidor
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) throw new Error('token ausente');
+
+        const res = await fetch('/api/admin-import-reports/pos-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ names: uniques }),
+        });
+        const json: POSPreviewResponse = await res.json();
+        if (res.ok && json.success) {
+          setNewPOSCount(json.newCount || 0);
+          setNewPOSNames(json.newNames || []);
+          setStatus(
+            `Filas: ${data.length}. Puntos de Venta únicos: ${uniques.length}. ` +
+            `Nuevos a crear: ${json.newCount || 0}.`
+          );
+        } else {
+          // si falla preview, mostramos al menos el conteo de únicos
+          setStatus(`Filas: ${data.length}. Puntos de Venta únicos: ${uniques.length}.`);
+        }
+      } catch {
+        setStatus(`Filas: ${data.length}. Puntos de Venta únicos: ${uniques.length}.`);
+      }
     } catch (e) {
       setStatus(`Error al leer: ${(e as Error)?.message || 'desconocido'}`);
     } finally {
@@ -197,24 +237,30 @@ export default function ImportPage() {
     if (!canImport) return;
     setBusy(true);
     setStatus('Importando…');
+    setServerInvalid([]);
+    setServerDupReqs([]);
+
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error('No se pudo obtener token');
 
       const res = await fetch('/api/admin-import-reports', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ reports: rows }),
       });
 
-      const json = await res.json();
-      if (!res.ok) throw new Error((json as { error?: string })?.error || 'Falló importación');
+      const json: ImportAPIResponse = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Falló importación');
 
-      const { importedCount, createdPOS } = json as { importedCount?: number; createdPOS?: number };
-      setStatus(`OK. Importados ${importedCount} reportes. POS nuevos: ${createdPOS}.`);
+      setServerInvalid(json.invalidRows || []);
+      setServerDupReqs(json.skippedExistingRequests || []);
+
+      setStatus(
+        `OK. Importados ${json.importedCount ?? 0} reportes. POS nuevos: ${json.createdPOS ?? 0}. ` +
+        `Duplicados (Solicitud/Aviso): ${(json.skippedExistingRequests || []).length}. ` +
+        `Inválidos: ${(json.invalidRows || []).length}.`
+      );
     } catch (e) {
       setStatus(`Error: ${(e as Error)?.message || 'desconocido'}`);
     } finally {
@@ -270,22 +316,60 @@ export default function ImportPage() {
             </button>
           </div>
 
+          {/* Previsualización */}
           {rows.length > 0 && (
             <div className="text-sm text-gray-700">
               <p>Filas leídas: <strong>{rows.length}</strong></p>
-              <p>Puntos de Venta únicos: <strong>{posList.length}</strong></p>
-              {!!posList.length && (
-                <div className="mt-2 max-h-40 overflow-auto border rounded p-2">
-                  {posList.map((p) => <div key={p} className="py-0.5">{p}</div>)}
-                </div>
+              <p>
+                Puntos de Venta únicos: <strong>{posList.length}</strong>{' '}
+                {typeof newPOSCount === 'number' && (
+                  <span> | Nuevos a crear: <strong>{newPOSCount}</strong></span>
+                )}
+              </p>
+              <p className="text-gray-500">
+                (Se deduplican por nombre sin distinguir mayúsculas/minúsculas.)
+              </p>
+
+              {!!newPOSNames.length && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-semibold text-gray-800">Ver POS nuevos</summary>
+                  <div className="mt-2 max-h-40 overflow-auto border rounded p-2">
+                    {newPOSNames.map((p) => (
+                      <div key={p} className="py-0.5">{p}</div>
+                    ))}
+                  </div>
+                </details>
               )}
             </div>
           )}
 
+          {/* Resumen / errores del servidor */}
           {!!status && (
-            <div className="mt-3 p-3 rounded bg-gray-100 text-gray-800 text-sm">
-              {status}
-            </div>
+            <div className="mt-3 p-3 rounded bg-gray-100 text-gray-800 text-sm">{status}</div>
+          )}
+
+          {!!serverDupReqs.length && (
+            <details className="mt-2 text-sm">
+              <summary className="cursor-pointer font-semibold">Duplicados (Solicitud/Aviso)</summary>
+              <div className="mt-2 max-h-40 overflow-auto border rounded p-2">
+                {serverDupReqs.map((r) => (
+                  <div key={r} className="py-0.5">{r}</div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {!!(serverInvalid && serverInvalid.length) && (
+            <details className="mt-2 text-sm">
+              <summary className="cursor-pointer font-semibold">Inválidos (faltan campos / fecha inválida)</summary>
+              <div className="mt-2 max-h-48 overflow-auto border rounded p-2">
+                {serverInvalid.map((it, idx) => (
+                  <div key={`${it.request || 'fila'}-${idx}`} className="py-0.5">
+                    {it.request ? <strong>{it.request}</strong> : <em>(sin solicitud)</em>} — {it.reason || 'inválido'}
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </div>
       </div>
