@@ -175,7 +175,7 @@ export default function Homepage() {
       {/* Header */}
       <div className="text-center my-6 z-10 animate-fadeInDown">
         <h1 className="text-[2.2rem] text-white font-bold mb-2 drop-shadow-md">
-          Acciones principales
+          Acciones Principales
         </h1>
         <p className="text-white/80 text-sm max-w-[480px] mx-auto">
           Elige lo que deseas hacer
