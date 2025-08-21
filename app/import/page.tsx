@@ -1,7 +1,7 @@
 // app/import/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
@@ -137,6 +137,28 @@ type ImportAPIResponse = {
   error?: string;
 };
 
+/** Toast de error (failure) */
+function showFailureDiv(message: string) {
+  const div = document.createElement('div');
+  div.className =
+    'fixed bottom-4 right-4 bg-red-600 text-white p-4 rounded-lg shadow-lg flex items-center gap-3 opacity-0 transition-opacity duration-500 z-50';
+  div.innerHTML = `
+    <svg class="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M12 9v4m0 4h.01M10.29 3.86l-8.48 14.7A2 2 0 003.53 22h16.94a2 2 0 001.72-3.44l-8.48-14.7a2 2 0 00-3.42 0z"/>
+    </svg>
+    <span class="text-sm font-medium">${message}</span>
+  `;
+  document.body.appendChild(div);
+  // fade in
+  requestAnimationFrame(() => div.classList.add('opacity-100'));
+  // auto close
+  setTimeout(() => {
+    div.classList.remove('opacity-100');
+    setTimeout(() => div.remove(), 500);
+  }, 3500);
+}
+
 export default function ImportPage() {
   const router = useRouter();
   const [user, loading] = useAuthState(auth);
@@ -147,7 +169,7 @@ export default function ImportPage() {
   const [status, setStatus] = useState<string>('');
   const [busy, setBusy] = useState(false);
 
-  // preview POS nuevos
+  // preview POS nuevos (si usas el endpoint /pos-preview)
   const [newPOSCount, setNewPOSCount] = useState<number>(0);
   const [newPOSNames, setNewPOSNames] = useState<string[]>([]);
 
@@ -155,15 +177,15 @@ export default function ImportPage() {
   const [serverInvalid, setServerInvalid] = useState<ImportAPIResponse['invalidRows']>([]);
   const [serverDupReqs, setServerDupReqs] = useState<string[]>([]);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!loading && !user) router.push('/login');
   }, [loading, user, router]);
 
   const canImport = useMemo(() => rows.length > 0, [rows.length]);
 
-  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] || null;
-    setFile(f);
+  const resetSelections = () => {
     setRows([]);
     setPosList([]);
     setNewPOSCount(0);
@@ -171,6 +193,18 @@ export default function ImportPage() {
     setStatus('');
     setServerInvalid([]);
     setServerDupReqs([]);
+  };
+
+  const clearFile = () => {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    resetSelections();
+  };
+
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    setFile(f);
+    resetSelections();
   };
 
   const handlePreview = async () => {
@@ -201,11 +235,10 @@ export default function ImportPage() {
       setRows(data);
       setPosList(uniques);
 
-      // Llamada al preview de POS en el servidor
+      // Preview de POS nuevos (si existe el endpoint)
       try {
         const token = await auth.currentUser?.getIdToken();
         if (!token) throw new Error('token ausente');
-
         const res = await fetch('/api/admin-import-reports/pos-preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -220,7 +253,6 @@ export default function ImportPage() {
             `Nuevos a crear: ${json.newCount || 0}.`
           );
         } else {
-          // si falla preview, mostramos al menos el conteo de únicos
           setStatus(`Filas: ${data.length}. Puntos de Venta únicos: ${uniques.length}.`);
         }
       } catch {
@@ -228,6 +260,7 @@ export default function ImportPage() {
       }
     } catch (e) {
       setStatus(`Error al leer: ${(e as Error)?.message || 'desconocido'}`);
+      showFailureDiv('No se pudo leer el archivo.');
     } finally {
       setBusy(false);
     }
@@ -256,13 +289,22 @@ export default function ImportPage() {
       setServerInvalid(json.invalidRows || []);
       setServerDupReqs(json.skippedExistingRequests || []);
 
+      const dup = (json.skippedExistingRequests || []).length;
+      const inv = (json.invalidRows || []).length;
+
       setStatus(
         `OK. Importados ${json.importedCount ?? 0} reportes. POS nuevos: ${json.createdPOS ?? 0}. ` +
-        `Duplicados (Solicitud/Aviso): ${(json.skippedExistingRequests || []).length}. ` +
-        `Inválidos: ${(json.invalidRows || []).length}.`
+        `Duplicados (Solicitud/Aviso): ${dup}. Inválidos: ${inv}.`
       );
+
+      // Si hubo reportes no importados (duplicados/invalidos), mostrar toast de error
+      if ((dup + inv) > 0) {
+        showFailureDiv(`No se importaron ${dup + inv} reportes (Duplicados: ${dup}, Inválidos: ${inv}).`);
+      }
     } catch (e) {
-      setStatus(`Error: ${(e as Error)?.message || 'desconocido'}`);
+      const msg = (e as Error)?.message || 'desconocido';
+      setStatus(`Error: ${msg}`);
+      showFailureDiv(`Error al importar: ${msg}`);
     } finally {
       setBusy(false);
     }
@@ -287,14 +329,44 @@ export default function ImportPage() {
         <h1 className="text-2xl font-bold text-gray-800 mb-4">Importar Reportes (Excel)</h1>
 
         <div className="space-y-4">
+          {/* Selector de archivo estilizado con botón X */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Archivo Excel (.xlsx / .xls)</label>
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={onPick}
-              className="w-full p-3 rounded-lg border border-gray-300 text-gray-900 bg-white"
-            />
+
+            <div className="relative">
+              <input
+                id="excel-file"
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={onPick}
+                className="sr-only"
+              />
+
+              <label
+                htmlFor="excel-file"
+                className="flex items-center justify-between gap-3 w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-3 pr-12 text-gray-900 cursor-pointer shadow-sm hover:border-gray-400 focus-within:ring-2 focus-within:ring-indigo-500"
+              >
+                <span className="truncate">
+                  {file ? file.name : 'Seleccionar archivo'}
+                </span>
+                <span className="inline-flex items-center px-3 py-1 rounded-md bg-indigo-600 text-white text-sm font-medium">
+                  Buscar…
+                </span>
+              </label>
+
+              {/* Botón X para limpiar archivo */}
+              {file && (
+                <button
+                  type="button"
+                  onClick={clearFile}
+                  aria-label="Quitar archivo"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 inline-flex items-center justify-center rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 shadow"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -321,15 +393,11 @@ export default function ImportPage() {
             <div className="text-sm text-gray-700">
               <p>Filas leídas: <strong>{rows.length}</strong></p>
               <p>
-                Puntos de Venta únicos: <strong>{posList.length}</strong>{' '}
+                Puntos de Venta únicos: <strong>{posList.length}</strong>
                 {typeof newPOSCount === 'number' && (
                   <span> | Nuevos a crear: <strong>{newPOSCount}</strong></span>
                 )}
               </p>
-              <p className="text-gray-500">
-                (Se deduplican por nombre sin distinguir mayúsculas/minúsculas.)
-              </p>
-
               {!!newPOSNames.length && (
                 <details className="mt-2">
                   <summary className="cursor-pointer font-semibold text-gray-800">Ver POS nuevos</summary>
