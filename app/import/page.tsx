@@ -293,7 +293,7 @@ export default function ImportPage() {
       const inv = (json.invalidRows || []).length;
 
       setStatus(
-        `OK. Importados ${json.importedCount ?? 0} reportes. POS nuevos: ${json.createdPOS ?? 0}. ` +
+        `OK. Importados ${json.importedCount ?? 0} reportes. Puntos de Venta nuevos: ${json.createdPOS ?? 0}. ` +
         `Duplicados (Solicitud/Aviso): ${dup}. Inválidos: ${inv}.`
       );
 
@@ -324,34 +324,16 @@ export default function ImportPage() {
         </svg>
       </button>
 
-      <div className="z-10 bg-white w-full max-w-xl p-6 rounded-2xl shadow-xl">
+      {/* Card principal: ahora es relative para posicionar el tooltip abajo-derecha */}
+      <div className="z-10 bg-white w-full max-w-xl p-6 rounded-2xl shadow-xl relative">
         <h1 className="text-2xl font-bold text-gray-800 mb-4">Importar Reportes (Excel)</h1>
 
         <div className="space-y-4">
-          {/* Selector de archivo con chip de info a la derecha */}
+          {/* Selector de archivo */}
           <div>
-            <div className="flex items-center justify-between">
-              <label htmlFor="excel-file" className="block text-sm font-medium text-gray-700">
-                Archivo Excel (.xlsx / .xls)
-              </label>
-
-              {/* Chip informativo (no clickeable) */}
-              <div className="relative group select-none">
-                <div
-                  className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5"
-                  aria-hidden="true"
-                >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2a10 10 0 100 20 10 10 0 000-20Zm.75 6.5a.75.75 0 11-1.5 0 .75.75 0 011.5 0ZM11 10.25a1 1 0 012 0v6a1 1 0 11-2 0v-6Z" />
-                  </svg>
-                  <span>Info</span>
-                </div>
-                {/* Tooltip */}
-                <div className="pointer-events-none absolute right-0 top-full mt-1 w-max max-w-xs rounded-md bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0 shadow-lg">
-                  Los campos obligatorios son: <strong>{REQUIRED_FIELDS_LABEL}</strong>.
-                </div>
-              </div>
-            </div>
+            <label htmlFor="excel-file" className="block text-sm font-medium text-gray-700">
+              Archivo Excel (.xlsx / .xls)
+            </label>
 
             <div className="relative mt-1">
               <input
@@ -421,7 +403,7 @@ export default function ImportPage() {
               {!!newPOSNames.length && (
                 <details className="mt-2 text-sm">
                   <summary className="cursor-pointer font-semibold text-gray-900">
-                    Ver POS nuevos
+                    Ver Puntos de Venta nuevos
                   </summary>
                   <div className="mt-2 max-h-40 overflow-auto rounded-xl border border-gray-300 bg-white p-2 shadow-sm">
                     {newPOSNames.map((p) => (
@@ -475,6 +457,24 @@ export default function ImportPage() {
             </details>
           )}
         </div>
+
+        {/* CHIP + TOOLTIP abajo-derecha (solo si hay errores). Sale hacia ARRIBA */}
+        {(serverInvalid?.length || serverDupReqs.length) ? (
+          <div className="absolute bottom-2 right-2 group select-none z-20">
+            <div
+              className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5"
+              aria-hidden="true"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2a10 10 0 100 20 10 10 0 000-20Zm.75 6.5a.75.75 0 11-1.5 0 .75.75 0 011.5 0ZM11 10.25a1 1 0 012 0v6a1 1 0 11-2 0v-6Z" />
+              </svg>
+              <span>Info</span>
+            </div>
+            <div className="pointer-events-none absolute bottom-full right-0 mb-2 w-max max-w-xs rounded-md bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0 shadow-lg">
+              Los campos obligatorios son: <strong>{REQUIRED_FIELDS_LABEL}</strong>.
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
