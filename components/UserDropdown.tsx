@@ -8,6 +8,8 @@ import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { getDoc, doc, getFirestore } from 'firebase/firestore';
 
+type UserDoc = { name?: string; role?: string };
+
 export default function UserDropdown() {
   const [user, loading] = useAuthState(auth);
   const [userName, setUserName] = useState('');
@@ -22,7 +24,7 @@ export default function UserDropdown() {
         try {
           const db = getFirestore();
           const userDoc = await getDoc(doc(db, 'users', user.uid));
-          const data = userDoc.exists() ? userDoc.data() : {};
+          const data: UserDoc = userDoc.exists() ? userDoc.data() as UserDoc : {};
           setUserName(data.name || 'User');
           setUserRole(data.role || '');
         } catch {
@@ -67,7 +69,20 @@ export default function UserDropdown() {
 
       {dropdownOpen && (
         <div className="absolute top-[50px] right-0 bg-white rounded-lg shadow-2xl w-40 z-[99999] opacity-100 transition-all">
-          {/* Export - for everyone with a role */}
+          {/* Importar - solo superadmin */}
+          {userRole === 'superadmin' && (
+            <div
+              onClick={() => {
+                setDropdownOpen(false);
+                router.push('/import');
+              }}
+              className="flex items-center px-4 py-3 text-sm text-gray-800 hover:bg-green-50 hover:text-green-600 cursor-pointer border-b border-gray-100"
+            >
+              <span className="mr-2">⬆️</span> Importar
+            </div>
+          )}
+
+          {/* Exportar - cualquier usuario con role */}
           {userRole && (
             <div
               onClick={() => {
@@ -79,7 +94,8 @@ export default function UserDropdown() {
               <span className="mr-2">⬇️</span> Exportar
             </div>
           )}
-          {/* Logs - only for superadmin */}
+
+          {/* Logs - solo superadmin */}
           {userRole === 'superadmin' && (
             <div
               onClick={() => {
@@ -91,6 +107,8 @@ export default function UserDropdown() {
               <span className="mr-2">📝</span> Registros
             </div>
           )}
+
+          {/* Salir */}
           <div
             onClick={async () => {
               setDropdownOpen(false);

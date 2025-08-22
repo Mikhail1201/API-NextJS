@@ -163,7 +163,7 @@ const BASE_COLS = [
 
 type ColKey = typeof BASE_COLS[number]['key'];
 
-/* Clave de almacenamiento local para orden de columnas */  // ⬅️
+/* Clave de almacenamiento local para orden de columnas */
 const LOCAL_ORDER_KEY = 'reports_columnOrder_v1';
 
 /* ================== Componente principal ================== */
@@ -195,6 +195,24 @@ export default function ReportsPage() {
     { ...DEFAULT_BASE_COLORS }
   );
 
+  // Borradores de texto para el input de HEX (permite teclear sin restricciones)
+  const [hexDrafts, setHexDrafts] = useState<Record<BaseStateKey, string>>(() => {
+    const o = {} as Record<BaseStateKey, string>;
+    (KNOWN_STATES as readonly BaseStateKey[]).forEach(k => { o[k] = DEFAULT_BASE_COLORS[k]; });
+    return o;
+  });
+
+  // Sincroniza borradores cuando cambian los colores confirmados
+  useEffect(() => {
+    setHexDrafts(prev => {
+      const next = { ...prev };
+      (KNOWN_STATES as readonly BaseStateKey[]).forEach(k => {
+        next[k] = stateBaseColors[k];
+      });
+      return next;
+    });
+  }, [stateBaseColors]);
+
   // Orden de columnas (por usuario)
   const [columnOrder, setColumnOrder] = useState<ColKey[]>(
     () => BASE_COLS.map(c => c.key)
@@ -212,7 +230,7 @@ export default function ReportsPage() {
 
   const db = getFirestore();
 
-  /* ---------- Cargar orden de columnas desde localStorage al iniciar ---------- */ // ⬅️
+  /* ---------- Cargar orden de columnas desde localStorage al iniciar ---------- */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LOCAL_ORDER_KEY);
@@ -335,7 +353,7 @@ export default function ReportsPage() {
               const normalized = normalizeColumnOrder(json.columnOrder);
               setColumnOrder(normalized);
               try {
-                localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(normalized)); // ⬅️
+                localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(normalized));
               } catch {}
             }
           }
@@ -389,35 +407,6 @@ export default function ReportsPage() {
   const isNumericKey = (k: FilterField) => k === 'request' || k === 'number' || k === 'bill';
   const isDateKey = (k: FilterField) => k === 'reportdate';
 
-  const isTextualFieldSelected =
-    filterField === 'description' ||
-    filterField === 'servicename' ||
-    filterField === 'servicedescription' ||
-    filterField === 'asesorias';
-
-  const textTarget: 'description' | 'servicename' | 'servicedescription' | 'asesorias' =
-    filterField === 'servicename'
-      ? 'servicename'
-      : filterField === 'servicedescription'
-      ? 'servicedescription'
-      : filterField === 'asesorias'
-      ? 'asesorias'
-      : 'description';
-
-  const textPlaceholder = isTextualFieldSelected
-    ? textTarget === 'servicename'
-      ? 'Buscar en nombre del servicio...'
-      : textTarget === 'servicedescription'
-      ? 'Buscar en descripción del servicio...'
-      : textTarget === 'asesorias'
-      ? 'Buscar en asesorías...'
-      : 'Buscar en descripción...'
-    : "Selecciona 'Descripción', 'Nombre del Servicio', 'Descripción del Servicio' o 'Asesorías' para buscar";
-
-  useEffect(() => {
-    if (!isTextualFieldSelected && textQuery) setTextQuery('');
-  }, [isTextualFieldSelected, textQuery]);
-
   const FIELD_LABELS: Record<FilterField, string> = {
     request: 'Solicitud/Aviso',
     number: 'Presupuesto',
@@ -432,6 +421,43 @@ export default function ReportsPage() {
     servicedescription: 'Descripción del Servicio',
     asesorias: 'Asesorías',
   };
+
+  // Habilitación y placeholder del buscador (universal)
+  const inputEnabled = !!filterField;
+  const textPlaceholder = !filterField
+    ? "Selecciona un campo para buscar…"
+    : filterField === 'reportdate'
+      ? 'Buscar por fecha (YYYY-MM-DD o DD/MM/AAAA)'
+      : `Buscar en ${FIELD_LABELS[filterField]}…`;
+
+  useEffect(() => {
+    if (!filterField && textQuery) setTextQuery('');
+  }, [filterField, textQuery]);
+
+  // Construye el string indexable según campo (fecha soporta varios formatos)
+  function getSearchString(r: Report, field: FilterField): string {
+    if (field === 'reportdate') {
+      const val = r.reportdate;
+      let iso = '';
+      let es = '';
+      if (typeof val === 'string') {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          iso = d.toISOString().slice(0, 10);
+          es = d.toLocaleDateString('es-CO');
+        } else {
+          // si ya vino "YYYY-MM-DD"
+          iso = val;
+        }
+      } else if (val && typeof val === 'object' && 'seconds' in val) {
+        const d = new Date(val.seconds * 1000);
+        iso = d.toISOString().slice(0, 10);
+        es = d.toLocaleDateString('es-CO');
+      }
+      return `${iso} ${es}`.trim().toLowerCase();
+    }
+    return String(r[field] ?? '').toLowerCase();
+  }
 
   const sortDescription = useMemo(() => {
     if (isDateKey(sortKey)) return sortOrder === 'desc' ? 'Más recientes' : 'Más antiguos';
@@ -449,9 +475,10 @@ export default function ReportsPage() {
       filtered = filtered.filter((r) => r.state === filterValue);
     }
 
-    if (isTextualFieldSelected && textQuery.trim()) {
-      const q = textQuery.toLowerCase();
-      filtered = filtered.filter((r) => String(r[textTarget] ?? '').toLowerCase().includes(q));
+    // Filtro de texto universal por campo (incluye fechas)
+    if (filterField && textQuery.trim()) {
+      const q = textQuery.trim().toLowerCase();
+      filtered = filtered.filter((r) => getSearchString(r, filterField).includes(q));
     }
 
     const asc = sortOrder === 'asc';
@@ -505,9 +532,7 @@ export default function ReportsPage() {
     reports,
     filterField,
     filterValue,
-    isTextualFieldSelected,
     textQuery,
-    textTarget,
     sortKey,
     sortOrder,
   ]);
@@ -548,7 +573,7 @@ export default function ReportsPage() {
       hasColorChangesRef.current = false;
       hasOrderChangesRef.current = false;
       try {
-        localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(columnOrder)); // ⬅️
+        localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(columnOrder));
       } catch {}
     }
   }
@@ -672,9 +697,9 @@ export default function ReportsPage() {
           value={textQuery}
           onChange={(e) => { setTextQuery(e.target.value); setCurrentPage(1); }}
           placeholder={textPlaceholder}
-          disabled={!isTextualFieldSelected}
+          disabled={!inputEnabled}
           className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${
-            !isTextualFieldSelected ? 'opacity-50 cursor-not-allowed' : ''
+            !inputEnabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         />
       </div>
@@ -1109,11 +1134,13 @@ export default function ReportsPage() {
                             />
                             <input
                               type="text"
-                              value={normalizeHex(base)}
-                              onChange={(e) => handleHexTyping(k, e.target.value)}
-                              onBlur={(e) => commitHex(k, e.target.value)}
-                              className="flex-1 border rounded px-2 py-1 text-sm text-black"
+                              value={hexDrafts[k] ?? ''}
+                              onChange={(e) => handleHexDraftChange(k, e.target.value)}
+                              onBlur={() => commitHexDraft(k)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+                              className="flex-1 border rounded px-2 py-1 text-sm text-black font-mono"
                               placeholder="#RRGGBB"
+                              spellCheck={false}
                             />
                           </div>
 
@@ -1294,14 +1321,14 @@ export default function ReportsPage() {
   /* ====== funciones locales ====== */
 
   function normalizeHex(v: string) {
+    // Devuelve SIEMPRE #RRGGBB si es válido (#RGB expandido).
     let s = v.trim();
     if (!s.startsWith('#')) s = `#${s}`;
-    const ok = /^#[0-9a-fA-F]{6}$/.test(s) || /^#[0-9a-fA-F]{3}$/.test(s);
-    if (!ok) return '#000000';
     if (/^#[0-9a-fA-F]{3}$/.test(s)) {
       const r = s[1], g = s[2], b = s[3];
       s = `#${r}${r}${g}${g}${b}${b}`;
     }
+    if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toUpperCase();
     return s.toUpperCase();
   }
 
@@ -1343,31 +1370,45 @@ export default function ReportsPage() {
     markColorsDirty();
   }
 
-  function handleHexTyping(key: BaseStateKey, raw: string) {
-    if (/^#?[0-9a-fA-F]{0,6}$/.test(raw.trim())) {
-      if (/^#?[0-9a-fA-F]{6}$/.test(raw.trim())) {
-        const n = normalizeHex(raw);
-        setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-        markColorsDirty();
-      }
-    }
+  // Borrador de texto para el input HEX
+  function handleHexDraftChange(key: BaseStateKey, raw: string) {
+    const s = raw.replace(/\s/g, '');
+    if (!/^#?[0-9a-fA-F]{0,6}$/.test(s)) return; // ignora caracteres inválidos
+    const withHash = s.startsWith('#') ? s.toUpperCase() : ('#' + s.toUpperCase());
+    setHexDrafts(prev => ({ ...prev, [key]: withHash }));
   }
 
-  function commitHex(key: BaseStateKey, raw: string) {
-    const n = normalizeHex(raw);
-    setStateBaseColors((prev) => ({ ...prev, [key]: n }));
-    markColorsDirty();
+  // Consolida el borrador cuando sea #RGB o #RRGGBB; si no es válido, restaura
+  function commitHexDraft(key: BaseStateKey) {
+    const s0 = (hexDrafts[key] || '').toUpperCase();
+    const s = s0.startsWith('#') ? s0 : ('#' + s0);
+
+    if (/^#[0-9A-F]{3}$/.test(s)) {
+      const full = `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`;
+      setStateBaseColors(prev => ({ ...prev, [key]: full }));
+      setHexDrafts(prev => ({ ...prev, [key]: full }));
+      markColorsDirty();
+    } else if (/^#[0-9A-F]{6}$/.test(s)) {
+      setStateBaseColors(prev => ({ ...prev, [key]: s }));
+      setHexDrafts(prev => ({ ...prev, [key]: s }));
+      markColorsDirty();
+    } else {
+      // inválido: vuelve al valor confirmado actual
+      setHexDrafts(prev => ({ ...prev, [key]: stateBaseColors[key] }));
+    }
   }
 
   function resetOne(key: BaseStateKey) {
     const def = DEFAULT_BASE_COLORS[key];
     setStateBaseColors((prev) => ({ ...prev, [key]: def }));
+    setHexDrafts(prev => ({ ...prev, [key]: def }));
     markColorsDirty();
   }
 
   function resetAll() {
     const all = { ...DEFAULT_BASE_COLORS };
     setStateBaseColors(all);
+    setHexDrafts(all);
     markColorsDirty();
   }
 }
