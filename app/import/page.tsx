@@ -429,7 +429,7 @@ export default function ImportPage() {
 
           {!!(serverInvalid && serverInvalid.length) && (
             <details className="mt-2 text-sm">
-              <summary className="cursor-pointer font-semibold">Inválidos (faltan campos / fecha inválida)</summary>
+              <summary className="text-gray-800 cursor-pointer font-semibold">Inválidos (faltan campos / fecha inválida)</summary>
               <div className="mt-2 max-h-48 overflow-auto border rounded p-2">
                 {serverInvalid.map((it, idx) => (
                   <div key={`${it.request || 'fila'}-${idx}`} className="py-0.5">
