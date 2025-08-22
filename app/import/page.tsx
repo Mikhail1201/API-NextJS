@@ -52,6 +52,8 @@ const KEY_TO_LABEL: Record<ColumnKey, string> = {
   asesorias: 'Asesorías',
 };
 
+const REQUIRED_FIELDS_LABEL = 'Solicitud/Aviso, Punto de Venta, Estado';
+
 const normStr = (v?: unknown): string =>
   typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : (v !== undefined && v !== null ? String(v) : '');
 
@@ -150,9 +152,7 @@ function showFailureDiv(message: string) {
     <span class="text-sm font-medium">${message}</span>
   `;
   document.body.appendChild(div);
-  // fade in
   requestAnimationFrame(() => div.classList.add('opacity-100'));
-  // auto close
   setTimeout(() => {
     div.classList.remove('opacity-100');
     setTimeout(() => div.remove(), 500);
@@ -297,7 +297,6 @@ export default function ImportPage() {
         `Duplicados (Solicitud/Aviso): ${dup}. Inválidos: ${inv}.`
       );
 
-      // Si hubo reportes no importados (duplicados/invalidos), mostrar toast de error
       if ((dup + inv) > 0) {
         showFailureDiv(`No se importaron ${dup + inv} reportes (Duplicados: ${dup}, Inválidos: ${inv}).`);
       }
@@ -329,11 +328,32 @@ export default function ImportPage() {
         <h1 className="text-2xl font-bold text-gray-800 mb-4">Importar Reportes (Excel)</h1>
 
         <div className="space-y-4">
-          {/* Selector de archivo estilizado con botón X */}
+          {/* Selector de archivo con chip de info a la derecha */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Archivo Excel (.xlsx / .xls)</label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="excel-file" className="block text-sm font-medium text-gray-700">
+                Archivo Excel (.xlsx / .xls)
+              </label>
 
-            <div className="relative">
+              {/* Chip informativo (no clickeable) */}
+              <div className="relative group select-none">
+                <div
+                  className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5"
+                  aria-hidden="true"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2a10 10 0 100 20 10 10 0 000-20Zm.75 6.5a.75.75 0 11-1.5 0 .75.75 0 011.5 0ZM11 10.25a1 1 0 012 0v6a1 1 0 11-2 0v-6Z" />
+                  </svg>
+                  <span>Info</span>
+                </div>
+                {/* Tooltip */}
+                <div className="pointer-events-none absolute right-0 top-full mt-1 w-max max-w-xs rounded-md bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0 shadow-lg">
+                  Los campos obligatorios son: <strong>{REQUIRED_FIELDS_LABEL}</strong>.
+                </div>
+              </div>
+            </div>
+
+            <div className="relative mt-1">
               <input
                 id="excel-file"
                 ref={fileInputRef}
@@ -345,7 +365,7 @@ export default function ImportPage() {
 
               <label
                 htmlFor="excel-file"
-                className="flex items-center justify-between gap-3 w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-3 pr-12 text-gray-900 cursor-pointer shadow-sm hover:border-gray-400 focus-within:ring-2 focus-within:ring-indigo-500"
+                className="flex items-center justify-between gap-3 w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-3 pr-12 text-gray-900 cursor-pointer shadow-sm hover:border-gray-400 focus-within:ring-2 focus-within:ring-indigo-500"
               >
                 <span className="truncate">
                   {file ? file.name : 'Seleccionar archivo'}
@@ -399,9 +419,11 @@ export default function ImportPage() {
                 )}
               </p>
               {!!newPOSNames.length && (
-                <details className="mt-2">
-                  <summary className="cursor-pointer font-semibold text-gray-800">Ver POS nuevos</summary>
-                  <div className="mt-2 max-h-40 overflow-auto border rounded p-2">
+                <details className="mt-2 text-sm">
+                  <summary className="cursor-pointer font-semibold text-gray-900">
+                    Ver POS nuevos
+                  </summary>
+                  <div className="mt-2 max-h-40 overflow-auto rounded-xl border border-gray-300 bg-white p-2 shadow-sm">
                     {newPOSNames.map((p) => (
                       <div key={p} className="py-0.5">{p}</div>
                     ))}
@@ -411,21 +433,20 @@ export default function ImportPage() {
             </div>
           )}
 
-          {/* Resumen / errores del servidor */}
+          {/* Resumen / estado */}
           {!!status && (
-            <div className="mt-3 p-3 rounded bg-gray-100 text-gray-800 text-sm">{status}</div>
+            <div className="mt-3 p-3 rounded-xl bg-gray-50 text-gray-800 text-sm border border-gray-200">
+              {status}
+            </div>
           )}
 
           {/* Duplicados */}
           {!!serverDupReqs.length && (
-            <details className="mt-2 text-sm" style={{ opacity: 1 }}>
+            <details className="mt-2 text-sm">
               <summary className="cursor-pointer font-semibold text-gray-900">
                 Duplicados (Solicitud/Aviso)
               </summary>
-              <div
-                className="mt-2 max-h-40 overflow-auto rounded-md bg-white shadow ring-1 ring-gray-200 p-2"
-                style={{ opacity: 1, color: '#111827' }} // fuerza color y opacidad
-              >
+              <div className="mt-2 max-h-40 overflow-auto rounded-xl border border-gray-300 bg-white p-2 shadow-sm">
                 {serverDupReqs.map((r) => (
                   <div key={r} className="py-1">
                     <span className="font-semibold text-gray-900">{r}</span>
@@ -437,14 +458,11 @@ export default function ImportPage() {
 
           {/* Inválidos */}
           {!!(serverInvalid && serverInvalid.length) && (
-            <details className="mt-2 text-sm" style={{ opacity: 1 }}>
+            <details className="mt-2 text-sm">
               <summary className="cursor-pointer font-semibold text-gray-900">
                 Inválidos (faltan campos / fecha inválida)
               </summary>
-              <div
-                className="mt-2 max-h-48 overflow-auto rounded-md bg-white shadow ring-1 ring-gray-200 p-2"
-                style={{ opacity: 1, color: '#111827' }} // fuerza color y opacidad
-              >
+              <div className="mt-2 max-h-48 overflow-auto rounded-xl border border-gray-300 bg-white p-2 shadow-sm">
                 {serverInvalid.map((it, idx) => (
                   <div key={`${it.request || 'fila'}-${idx}`} className="py-1">
                     <span className="font-semibold text-gray-900">
@@ -456,7 +474,6 @@ export default function ImportPage() {
               </div>
             </details>
           )}
-
         </div>
       </div>
     </div>
