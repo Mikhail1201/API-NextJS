@@ -416,29 +416,47 @@ export default function ImportPage() {
             <div className="mt-3 p-3 rounded bg-gray-100 text-gray-800 text-sm">{status}</div>
           )}
 
+          {/* Duplicados */}
           {!!serverDupReqs.length && (
-            <details className="mt-2 text-sm">
-              <summary className="cursor-pointer font-semibold">Duplicados (Solicitud/Aviso)</summary>
-              <div className="mt-2 max-h-40 overflow-auto border rounded p-2">
+            <details className="mt-2 text-sm" style={{ opacity: 1 }}>
+              <summary className="cursor-pointer font-semibold text-gray-900">
+                Duplicados (Solicitud/Aviso)
+              </summary>
+              <div
+                className="mt-2 max-h-40 overflow-auto rounded-md bg-white shadow ring-1 ring-gray-200 p-2"
+                style={{ opacity: 1, color: '#111827' }} // fuerza color y opacidad
+              >
                 {serverDupReqs.map((r) => (
-                  <div key={r} className="py-0.5">{r}</div>
-                ))}
-              </div>
-            </details>
-          )}
-
-          {!!(serverInvalid && serverInvalid.length) && (
-            <details className="mt-2 text-sm">
-              <summary className="text-gray-800 cursor-pointer font-semibold">Inválidos (faltan campos / fecha inválida)</summary>
-              <div className="mt-2 max-h-48 overflow-auto border rounded p-2">
-                {serverInvalid.map((it, idx) => (
-                  <div key={`${it.request || 'fila'}-${idx}`} className="py-0.5">
-                    {it.request ? <strong>{it.request}</strong> : <em>(sin solicitud)</em>} — {it.reason || 'inválido'}
+                  <div key={r} className="py-1">
+                    <span className="font-semibold text-gray-900">{r}</span>
                   </div>
                 ))}
               </div>
             </details>
           )}
+
+          {/* Inválidos */}
+          {!!(serverInvalid && serverInvalid.length) && (
+            <details className="mt-2 text-sm" style={{ opacity: 1 }}>
+              <summary className="cursor-pointer font-semibold text-gray-900">
+                Inválidos (faltan campos / fecha inválida)
+              </summary>
+              <div
+                className="mt-2 max-h-48 overflow-auto rounded-md bg-white shadow ring-1 ring-gray-200 p-2"
+                style={{ opacity: 1, color: '#111827' }} // fuerza color y opacidad
+              >
+                {serverInvalid.map((it, idx) => (
+                  <div key={`${it.request || 'fila'}-${idx}`} className="py-1">
+                    <span className="font-semibold text-gray-900">
+                      {it.request ?? '(sin solicitud)'}
+                    </span>
+                    <span className="text-gray-700"> — {it.reason || 'inválido'}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
         </div>
       </div>
     </div>
