@@ -227,6 +227,8 @@ export default function ReportsPage() {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [hoverBefore, setHoverBefore] = useState<boolean>(true);
   const organizeScrollRef = useRef<HTMLDivElement | null>(null);
+  const hScrollRef = useRef<HTMLDivElement | null>(null);
+  const suppressHScrollRef = useRef<boolean>(false);
 
   const db = getFirestore();
 
@@ -255,7 +257,7 @@ export default function ReportsPage() {
       if (typeof val === 'object' && 'seconds' in val && typeof val.seconds === 'number') {
         return new Date(val.seconds * 1000).toLocaleDateString('es-CO');
       }
-    } catch {}
+    } catch { }
     return '-';
   };
 
@@ -354,7 +356,7 @@ export default function ReportsPage() {
               setColumnOrder(normalized);
               try {
                 localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(normalized));
-              } catch {}
+              } catch { }
             }
           }
         }
@@ -446,7 +448,6 @@ export default function ReportsPage() {
           iso = d.toISOString().slice(0, 10);
           es = d.toLocaleDateString('es-CO');
         } else {
-          // si ya vino "YYYY-MM-DD"
           iso = val;
         }
       } else if (val && typeof val === 'object' && 'seconds' in val) {
@@ -457,6 +458,48 @@ export default function ReportsPage() {
       return `${iso} ${es}`.trim().toLowerCase();
     }
     return String(r[field] ?? '').toLowerCase();
+  }
+
+  // Detecta si el evento proviene de un nodo con scroll vertical disponible
+  // ¿Tiene scroll vertical real?
+  function isVerticallyScrollable(el: HTMLElement) {
+    const style = window.getComputedStyle(el);
+    return /(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight;
+  }
+
+  // Sube desde el target hasta el contenedor horizontal buscando un ancestro con scroll vertical
+  function findVertScrollableAncestor(start: HTMLElement, stopAt: HTMLElement) {
+    let el: HTMLElement | null = start;
+    while (el && el !== stopAt) {
+      if (el instanceof HTMLElement && isVerticallyScrollable(el)) return el;
+      el = el.parentElement as HTMLElement | null;
+    }
+    return null;
+  }
+
+  // Altura de línea en px (si line-height es 'normal', aproxima)
+  function getLineHeightPx(el: HTMLElement) {
+    const cs = window.getComputedStyle(el);
+    const lh = parseFloat(cs.lineHeight);
+    if (Number.isFinite(lh)) return lh;
+    const fs = parseFloat(cs.fontSize) || 16;
+    return Math.round(fs * 1.4); // aprox. leading-snug
+  }
+
+
+  function hasVertScrollableDesc(root: HTMLElement) {
+    // Busca descendientes con overflow-y que realmente puedan hacer scroll
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let node = walker.currentNode as HTMLElement | null;
+    while (node) {
+      const el = node as HTMLElement;
+      const style = window.getComputedStyle(el);
+      if (/(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+        return true;
+      }
+      node = walker.nextNode() as HTMLElement | null;
+    }
+    return false;
   }
 
   const sortDescription = useMemo(() => {
@@ -559,7 +602,7 @@ export default function ReportsPage() {
   if (loading || !roleChecked) return null;
 
   // Tipo seguro para variables CSS personalizadas
-  type RowStyle = CSSProperties & { ['--row-bg']?: string; ['--row-hover']?: string };
+  type RowStyle = CSSProperties & { ['--row-bg']?: string;['--row-hover']?: string };
 
   /* ================== Handlers de Config ================== */
   const handleOpenConfig = () => {
@@ -574,7 +617,7 @@ export default function ReportsPage() {
       hasOrderChangesRef.current = false;
       try {
         localStorage.setItem(LOCAL_ORDER_KEY, JSON.stringify(columnOrder));
-      } catch {}
+      } catch { }
     }
   }
 
@@ -598,7 +641,7 @@ export default function ReportsPage() {
         aria-label="Go back to homepage"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none"
-             viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
       </button>
@@ -611,11 +654,11 @@ export default function ReportsPage() {
         title="Configuraciones"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6"
-             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.877 2.42 2.42a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.89-1.543.877-3.31 2.42-2.42.93.537 2.107.214 2.573-1.066z" />
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.89 3.31.877 2.42 2.42a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.89 1.543-.877 3.31-2.42 2.42a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.89-3.31-.877-2.42-2.42a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.89-1.543.877-3.31 2.42-2.42.93.537 2.107.214 2.573-1.066z" />
           <path strokeLinecap="round" strokeLinejoin="round"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
 
@@ -698,9 +741,8 @@ export default function ReportsPage() {
           onChange={(e) => { setTextQuery(e.target.value); setCurrentPage(1); }}
           placeholder={textPlaceholder}
           disabled={!inputEnabled}
-          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${
-            !inputEnabled ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
+          className={`p-2 rounded-lg border border-gray-300 bg-white text-gray-800 flex-1 min-w-[220px] ${!inputEnabled ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
         />
       </div>
 
@@ -708,6 +750,7 @@ export default function ReportsPage() {
       <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[420px] flex flex-col justify-between">
         <div className="flex-grow overflow-auto">
           <div
+            ref={hScrollRef}
             className="overflow-x-auto scrollbar-hide cursor-grab"
             style={{
               WebkitOverflowScrolling: 'touch',
@@ -717,6 +760,27 @@ export default function ReportsPage() {
               touchAction: 'pan-x',
               overflowY: 'hidden',
             }}
+            // ➊ Primero, capturamos el wheel y, si el target está en una celda scrollable,
+            //    hacemos el desplazamiento en pasos de UNA LÍNEA y frenamos la propagación.
+            onWheelCapture={(e) => {
+              const container = e.currentTarget as HTMLDivElement;
+              const start = e.target as HTMLElement;
+              const scrollEl = findVertScrollableAncestor(start, container);
+              if (scrollEl) {
+                const step = getLineHeightPx(scrollEl);
+                const dir = e.deltaY > 0 ? 1 : -1;
+                const maxTop = scrollEl.scrollHeight - scrollEl.clientHeight;
+                const next = Math.max(0, Math.min(maxTop, scrollEl.scrollTop + dir * step));
+                if (next !== scrollEl.scrollTop) {
+                  scrollEl.scrollTop = next;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
+            }}
+            // ➋ Si NO venía de una celda con scroll vertical, seguimos con el comportamiento
+            //    original: convertir la rueda vertical a scroll horizontal de la tabla.
             onWheel={(e) => {
               if (e.deltaY !== 0) {
                 e.currentTarget.scrollLeft += e.deltaY; // sin preventDefault
@@ -741,10 +805,18 @@ export default function ReportsPage() {
                     number: report.number || '-',
                     reportdate: formatReportDate(report.reportdate),
                     description: (
-                      <div className="h-12 overflow-y-auto flex items-center justify-center">
-                        {report.description || '-'}
+                      <div
+                        className="h-12 overflow-y-auto overflow-x-hidden px-2 py-1 leading-snug text-left"
+                        role="region"
+                        aria-label="Contenido de la celda"
+                        tabIndex={0}
+                      >
+                        <div className="whitespace-pre-wrap break-words">
+                          {report.description || '-'}
+                        </div>
                       </div>
                     ),
+
                     pointofsell: report.pointofsell || '-',
                     quotation: <LinkCell value={report.quotation} />,
                     deliverycertificate: report.deliverycertificate || '-',
@@ -779,7 +851,17 @@ export default function ReportsPage() {
                       }}
                     >
                       {orderedCols.map((c) => (
-                        <td key={c.key} className={c.className}>
+                        <td
+                          key={c.key}
+                          className={c.className}
+                          onMouseEnter={(e) => {
+                            const td = e.currentTarget as HTMLTableCellElement;
+                            suppressHScrollRef.current = hasVertScrollableDesc(td);
+                          }}
+                          onMouseLeave={() => {
+                            suppressHScrollRef.current = false;
+                          }}
+                        >
                           {rowMap[c.key]}
                         </td>
                       ))}
@@ -811,11 +893,10 @@ export default function ReportsPage() {
                     {showEllipsis && <span className="px-1">...</span>}
                     <button
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded cursor-pointer text-black ${
-                        currentPage === page
-                          ? 'bg-blue-600 text-white font-bold'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                      className={`px-3 py-1 rounded cursor-pointer text-black ${currentPage === page
+                        ? 'bg-blue-600 text-white font-bold'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
                     >
                       {page}
                     </button>
@@ -873,8 +954,8 @@ export default function ReportsPage() {
                     className="w-full border rounded p-1 mt-1 h-10"
                     value={
                       typeof editReport.reportdate === 'object' &&
-                      editReport.reportdate &&
-                      'seconds' in editReport.reportdate
+                        editReport.reportdate &&
+                        'seconds' in editReport.reportdate
                         ? new Date(editReport.reportdate.seconds * 1000).toISOString().split('T')[0]
                         : (editReport.reportdate as string) || ''
                     }
@@ -1119,7 +1200,7 @@ export default function ReportsPage() {
                               <div className="flex items-center justify-between px-2 py-1">
                                 <span className="opacity-80 text-gray-700">Fila</span>
                                 <span className="px-2 py-0.5 rounded-full"
-                                      style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}>
+                                  style={{ backgroundColor: derived.badgeBg, color: derived.badgeText }}>
                                   Chip
                                 </span>
                               </div>
@@ -1250,9 +1331,8 @@ export default function ReportsPage() {
                               setDragKey(null);
                               setHoverIndex(null);
                             }}
-                            className={`flex items-center justify-between gap-3 rounded-md border p-2 mb-2 cursor-grab select-none ${
-                              dragKey === key ? 'opacity-80 ring-2 ring-blue-400 bg-blue-50' : 'bg-gray-50 hover:bg-gray-100'
-                            }`}
+                            className={`flex items-center justify-between gap-3 rounded-md border p-2 mb-2 cursor-grab select-none ${dragKey === key ? 'opacity-80 ring-2 ring-blue-400 bg-blue-50' : 'bg-gray-50 hover:bg-gray-100'
+                              }`}
                           >
                             <div className="flex items-center gap-3">
                               {/* Handle */}
