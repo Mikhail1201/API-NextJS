@@ -44,9 +44,9 @@ function monthMeta(monthStr: string) {
   return { year, month, total, items };
 }
 
-/** 
- * Recuento de totales. 
- * Si es fin de semana, SOLO cuenta si la columna está desbloqueada.
+/**
+ * Recuento de totales.
+ * Si es fin de semana, SOLO cuenta si la columna está desbloqueada (UI).
  */
 function computeTotals(
   map: Record<string, Status | undefined>,
@@ -55,11 +55,13 @@ function computeTotals(
 ) {
   let P = 0, A = 0, T = 0, J = 0, laborables = 0;
   for (const it of meta.items) {
-    // si es fin de semana y NO está desbloqueado, no cuenta
-    if (it.isWeekend && !unlockedWeekendCols[it.iso]) continue;
+    if (it.isWeekend && !unlockedWeekendCols[it.iso]) continue; // fines de semana bloqueados no cuentan
     laborables++;
     const s = map[it.iso];
-    if (s === 'P') P++; else if (s === 'A') A++; else if (s === 'T') T++; else if (s === 'J') J++;
+    if (s === 'P') P++;
+    else if (s === 'A') A++;
+    else if (s === 'T') T++;
+    else if (s === 'J') J++;
   }
   return { asistencia: laborables ? P / laborables : 0, ausencia: A, tardanza: T, justificacion: J, laborables };
 }
@@ -140,16 +142,18 @@ export default function AssistancePage() {
         if (ignore) return;
 
         setAssistants(data.assistants || []);
+
+        // ✅ Cargar days y notes con defaults seguros
         const map: Record<string, AssistanceDoc> = {};
+        const allAssistance = data.assistance || [];
         for (const a of data.assistants || []) {
-          const found = (data.assistance || []).find((d) => d.assistantId === a.id) || {};
+          const found = allAssistance.find((d) => d.assistantId === a.id) as AssistanceDoc | undefined;
           map[a.id] = {
             assistantId: a.id,
             month,
-            ...found,
-            // asegura maps definidos
-            days: { ...(found as AssistanceDoc).days },
-            notes: { ...(found as AssistanceDoc).notes },
+            days: found?.days ?? {},
+            notes: found?.notes ?? {},
+            totals: found?.totals,
           };
         }
         setAssistMap(map);
@@ -281,7 +285,6 @@ export default function AssistancePage() {
       if (text.trim() === '') delete notes[iso];
       else notes[iso] = text;
       doc.notes = notes;
-      // totales NO cambian por nota
       next[aid] = doc;
       return next;
     });
@@ -301,7 +304,7 @@ export default function AssistancePage() {
     }
   }
 
-  // Cierra el editor si haces click fuera o presionas Escape
+  // Cerrar editor (ESC o click fuera)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setNoteEditor(null);
@@ -520,6 +523,12 @@ export default function AssistancePage() {
                             s === 'P' ? 'P' : s === 'A' ? 'A' : s === 'T' ? 'T' : s === 'J' ? 'J' : '—';
 
                           const noteText = doc.notes?.[d.iso];
+                          const baseTitle = d.isWeekend
+                            ? (weekendLocked ? 'Fin de semana (bloqueado)' : 'Fin de semana (editable)')
+                            : 'Clic izquierdo: cambiar estado · Clic derecho: nota';
+                          const fullTitle = noteText && noteText.trim()
+                            ? `${baseTitle}\nNota: ${noteText.trim()}`
+                            : baseTitle;
 
                           return (
                             <td key={d.iso} className="px-0.5 py-1 text-center">
@@ -529,18 +538,18 @@ export default function AssistancePage() {
                                   className={`w-7 h-7 rounded text-xs font-bold ${color}`}
                                   onClick={() => handleCellClick(a.id, d.iso, d.isWeekend)}
                                   onContextMenu={(e) => openNoteEditor(e, a.id, d.iso)}
-                                  title={
-                                    d.isWeekend
-                                      ? (weekendLocked ? 'Fin de semana (bloqueado)' : 'Fin de semana (editable)')
-                                      : 'Clic para cambiar estado'
-                                  }
+                                  title={fullTitle}
+                                  aria-label={fullTitle}
                                 >
                                   {label}
                                 </button>
 
                                 {/* indicador si hay nota */}
                                 {noteText && (
-                                  <span className="absolute -right-0.5 -bottom-0.5 w-1.5 h-1.5 rounded-full bg-blue-600" />
+                                  <span
+                                    className="absolute -right-0.5 -bottom-0.5 w-1.5 h-1.5 rounded-full bg-blue-600"
+                                    title="Hay una nota para este día"
+                                  />
                                 )}
                               </span>
                             </td>
