@@ -102,9 +102,22 @@ export default function AssistancePage() {
         (async () => {
             setLoading(true);
             try {
-                const res = await fetch(`/api/admin-assistance?month=${month}`, { cache: 'no-store' });
+                const idToken = await auth.currentUser?.getIdToken();   // ⬅️ token
+                if (!idToken) throw new Error('No hay sesión');
+
+                const res = await fetch(`/api/admin-assistance?month=${month}`, {
+                    cache: 'no-store',
+                    headers: { Authorization: `Bearer ${idToken}` },       // ⬅️ header
+                });
+
+                if (!res.ok) {
+                    const msg = await res.text();
+                    throw new Error(`GET /admin-assistance ${res.status}: ${msg}`);
+                }
+
                 const data: ApiGetResponse = await res.json();
                 if (ignore) return;
+
                 setAssistants(data.assistants || []);
                 const map: Record<string, AssistanceDoc> = {};
                 for (const a of data.assistants || []) {
@@ -136,10 +149,17 @@ export default function AssistancePage() {
             next[assistantId] = doc;
             return next;
         });
+
         try {
+            const idToken = await auth.currentUser?.getIdToken();
+            if (!idToken) throw new Error('Sesión no válida');
+
             await fetch('/api/admin-assistance', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`,             // ⬅️ header
+                },
                 body: JSON.stringify({ assistantId, date: isoDate, status, month }),
             });
         } catch (e) {
@@ -161,37 +181,21 @@ export default function AssistancePage() {
         e.preventDefault();
         if (!fullName.trim() || !documentNumber.trim()) return;
 
-        const idToken = await auth.currentUser?.getIdToken();
-        if (!idToken) {
-            alert('Sesión no válida: vuelve a iniciar sesión.');
-            return;
-        }
-
-        const payload = {
-            fullName: fullName.trim(),
-            documentNumber: documentNumber.trim(),
-        };
-
-        const res = await fetch('/api/admin-assistance?createAssistant=1', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${idToken}`, // ⬅️ MUY IMPORTANTE
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-            const msg = await res.text();
-            console.error('Error al crear asistente:', msg);
-            alert('No se pudo crear el asistente.\n\n' + msg);
-            return;
-        }
-
         try {
+            const idToken = await auth.currentUser?.getIdToken();
+            if (!idToken) throw new Error('Sesión no válida');
+
+            const payload = {
+                fullName: fullName.trim(),
+                documentNumber: documentNumber.trim(),
+            };
+
             const res = await fetch('/api/admin-assistance?createAssistant=1', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`,               // ⬅️ header obligatorio
+                },
                 body: JSON.stringify(payload),
             });
 
@@ -199,18 +203,16 @@ export default function AssistancePage() {
                 const msg = await res.text();
                 console.error('Error al crear asistente:', msg);
                 alert('No se pudo crear el asistente.\n\n' + msg);
-                return;
+                return;                                             // ⬅️ no mostramos success si falla
             }
 
-            // Limpia campos y vuelve a la tabla
+            // limpiar y refrescar
             setFullName('');
             setDocumentNumber('');
             setMode('table');
+            setMonth((m) => m); // re-dispara GET
 
-            // Refresca la data del mes (dispara el useEffect que hace fetch)
-            setMonth((m) => m);
-
-            // === SuccessDiv (igual estilo al de Reportes) ===
+            // successDiv igual que en Reportes
             let seconds = 2;
             const successDiv = document.createElement('div');
             successDiv.className =
@@ -224,7 +226,6 @@ export default function AssistancePage() {
       <span>¡Asistente agregado exitosamente! Actualizando en <span id="countdown">${seconds}</span>…</span>
     `;
             document.body.appendChild(successDiv);
-            // fade in
             setTimeout(() => successDiv.classList.add('opacity-100'), 10);
 
             const countdownInterval = setInterval(() => {
@@ -234,20 +235,15 @@ export default function AssistancePage() {
                 if (seconds <= 0) {
                     clearInterval(countdownInterval);
                     successDiv.classList.remove('opacity-100');
-                    setTimeout(() => {
-                        successDiv.remove();
-                        // recarga suave: vuelve a disparar el fetch (ya lo hacemos con setMonth),
-                        // si prefieres forzar reload total, descomenta:
-                        // window.location.reload();
-                    }, 400);
+                    setTimeout(() => successDiv.remove(), 400);
                 }
             }, 1000);
-            // === /SuccessDiv ===
         } catch (err) {
             console.error(err);
             alert('Ocurrió un error inesperado al crear el asistente.');
         }
     }
+
 
 
     // 🔍 Filtro (nombre o documento)
