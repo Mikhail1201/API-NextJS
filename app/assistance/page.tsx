@@ -183,15 +183,26 @@ export default function AssistancePage() {
     }
   }
 
-  function cycleStatus(current: Status | undefined, isWeekend: boolean): Status {
-    if (isWeekend) return 'N';
+  /* =================== Fin de semana editable por columna =================== */
+  // columnas de fin de semana desbloqueadas (por ISO: YYYY-MM-DD)
+  const [unlockedWeekendCols, setUnlockedWeekendCols] = useState<Record<string, boolean>>({});
+  function isWeekendEditable(iso: string) {
+    return !!unlockedWeekendCols[iso];
+  }
+  function toggleWeekend(iso: string) {
+    setUnlockedWeekendCols(prev => ({ ...prev, [iso]: !prev[iso] }));
+  }
+
+  function cycleStatus(current: Status | undefined, isWeekend: boolean, iso: string): Status {
+    // si es fin de semana pero la columna está bloqueada: no se edita
+    if (isWeekend && !isWeekendEditable(iso)) return 'N';
     const i = STATUS_ORDER.indexOf((current as Status) || '');
     return i < 0 ? 'P' : STATUS_ORDER[(i + 1) % STATUS_ORDER.length];
   }
 
   async function handleCellClick(aid: string, iso: string, isWeekend: boolean) {
     const current = assistMap[aid]?.days?.[iso];
-    const next = cycleStatus(current, isWeekend);
+    const next = cycleStatus(current, isWeekend, iso);
     if (next === 'N') return;
     await saveDay(aid, iso, next);
   }
@@ -359,9 +370,9 @@ export default function AssistancePage() {
           <div className="overflow-x-auto">
             {/* Altura ajustada a pantalla + scroll vertical interno */}
             <div className="overflow-y-auto" style={{ height: tableHeight }}>
-              <table className="min-w-[1100px] w-full text-sm">
+              <table className="min-w-[1100px] w-full text-sm text-gray-800">
                 <thead>
-                  {/* Fila 1: títulos */}
+                  {/* Fila 1: títulos (número del día) */}
                   <tr className="bg-gray-100 text-gray-700">
                     <th
                       className="px-2 py-2 text-left sticky left-0 bg-gray-100 z-10"
@@ -376,15 +387,30 @@ export default function AssistancePage() {
                       Nombres y Apellidos
                     </th>
                     {meta.items.map((d) => (
-                      <th key={d.iso} className="px-1 py-2 text-center w-8">{d.day}</th>
+                      <th key={d.iso} className="px-1 py-2 text-center w-8">
+                        <button
+                          type="button"
+                          onClick={() => d.isWeekend && toggleWeekend(d.iso)}
+                          className={`w-8 h-8 rounded text-xs font-semibold ${d.isWeekend ? 'hover:bg-gray-200' : ''}`}
+                          title={
+                            d.isWeekend
+                              ? (isWeekendEditable(d.iso) ? 'Bloquear columna' : 'Desbloquear columna')
+                              : undefined
+                          }
+                        >
+                          {d.day}
+                          {d.isWeekend ? (isWeekendEditable(d.iso) ? ' 🔓' : ' 🔒') : ''}
+                        </button>
+                      </th>
                     ))}
                     <th className="px-2 py-2 text-center">ASISTENCIA</th>
                     <th className="px-2 py-2 text-center">AUSENCIA</th>
                     <th className="px-2 py-2 text-center">TARDANZA</th>
                     <th className="px-2 py-2 text-center">JUSTIFICACIÓN</th>
                   </tr>
-                  {/* Fila 2: día de la semana (sticky dentro del scroll vertical) */}
-                  <tr className="bg-gray-50 text-gray-600 sticky top-0 z-10">
+
+                  {/* Fila 2: letra del día (sticky dentro del scroll vertical) */}
+                  <tr className="bg-gray-50 text-gray-700 sticky top-0 z-10">
                     <th
                       className="px-2 py-1 sticky left-0 bg-gray-50 z-10"
                       style={{ width: DOC_COL_W, minWidth: DOC_COL_W }}
@@ -394,7 +420,20 @@ export default function AssistancePage() {
                       style={{ left: DOC_COL_W, width: NAME_COL_W, minWidth: NAME_COL_W }}
                     ></th>
                     {meta.items.map((d) => (
-                      <th key={d.iso} className="px-1 py-1 text-center w-8">{d.letter}</th>
+                      <th key={d.iso} className="px-1 py-1 text-center w-8">
+                        <button
+                          type="button"
+                          onClick={() => d.isWeekend && toggleWeekend(d.iso)}
+                          className={`w-8 h-6 rounded text-xs ${d.isWeekend ? 'hover:bg-gray-200' : ''}`}
+                          title={
+                            d.isWeekend
+                              ? (isWeekendEditable(d.iso) ? 'Bloquear columna' : 'Desbloquear columna')
+                              : undefined
+                          }
+                        >
+                          {d.letter}
+                        </button>
+                      </th>
                     ))}
                     <th className="px-2 py-1"></th>
                     <th className="px-2 py-1"></th>
@@ -417,13 +456,13 @@ export default function AssistancePage() {
                       <tr key={a.id} className="border-t">
                         {/* stickies */}
                         <td
-                          className="px-2 py-1 sticky left-0 bg-white z-10"
+                          className="px-2 py-1 sticky left-0 bg-white z-10 text-gray-800"
                           style={{ width: DOC_COL_W, minWidth: DOC_COL_W }}
                         >
                           {a.documentNumber}
                         </td>
                         <td
-                          className="px-2 py-1 sticky bg-white z-10"
+                          className="px-2 py-1 sticky bg-white z-10 text-gray-900 font-medium"
                           style={{ left: DOC_COL_W, width: NAME_COL_W, minWidth: NAME_COL_W }}
                         >
                           {a.fullName}
@@ -431,14 +470,18 @@ export default function AssistancePage() {
 
                         {/* días */}
                         {meta.items.map((d) => {
-                          const s = d.isWeekend ? 'N' : (doc.days[d.iso] as Status | undefined);
+                          const weekendLocked = d.isWeekend && !isWeekendEditable(d.iso);
+                          const s = weekendLocked ? 'N' : (doc.days[d.iso] as Status | undefined);
+
                           const color =
                             s === 'P' ? 'bg-green-500 text-white' :
                             s === 'A' ? 'bg-red-500 text-white' :
                             s === 'T' ? 'bg-amber-500 text-white' :
                             s === 'J' ? 'bg-blue-500 text-white' :
-                            d.isWeekend ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-600';
-                          const label = s === 'P' ? 'P' : s === 'A' ? 'A' : s === 'T' ? 'T' : s === 'J' ? 'J' : '—';
+                            weekendLocked ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700';
+
+                          const label =
+                            s === 'P' ? 'P' : s === 'A' ? 'A' : s === 'T' ? 'T' : s === 'J' ? 'J' : '—';
 
                           return (
                             <td key={d.iso} className="px-0.5 py-1 text-center">
@@ -446,7 +489,7 @@ export default function AssistancePage() {
                                 type="button"
                                 className={`w-7 h-7 rounded text-xs font-bold ${color}`}
                                 onClick={() => handleCellClick(a.id, d.iso, d.isWeekend)}
-                                title={d.isWeekend ? 'Fin de semana' : 'Clic para cambiar estado'}
+                                title={d.isWeekend ? (weekendLocked ? 'Fin de semana (bloqueado)' : 'Fin de semana (editable)') : 'Clic para cambiar estado'}
                               >
                                 {label}
                               </button>
