@@ -1,26 +1,48 @@
-import { NextResponse } from 'next/server';
+// app/api/admin-assistance/route.js
 import admin from 'firebase-admin';
+import { getApps } from 'firebase-admin/app';
 
-// ---------- Firebase Admin singleton ----------
-function initAdmin() {
-  if (!admin.apps.length) {
-    try {
-      // 1) Service Account via GOOGLE_APPLICATION_CREDENTIALS
-      admin.initializeApp({ credential: admin.credential.applicationDefault() });
-    } catch {
-      // 2) Or via env var SERVICE_ACCOUNT_JSON (stringified)
-      const json = process.env.SERVICE_ACCOUNT_JSON
-        ? JSON.parse(process.env.SERVICE_ACCOUNT_JSON)
-        : null;
-      if (!json) throw new Error('Firebase Admin no configurado');
-      admin.initializeApp({ credential: admin.credential.cert(json) });
-    }
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// ---------- Firebase Admin ----------
+if (!getApps().length) {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT no está definido');
   }
-  return admin.firestore();
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  // Arregla saltos de línea de la private key por si vienen escapados
+  if (serviceAccount.private_key) {
+    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+  }
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
 }
-const db = initAdmin();
+const db = admin.firestore();
 
-// ---------- Helpers ----------
+// ---------- Utils ----------
+function requireBearer(req) {
+  const authHeader = req.headers.get('authorization') || '';
+  const idToken = authHeader.startsWith('Bearer ')
+    ? authHeader.slice('Bearer '.length)
+    : null;
+  if (!idToken) {
+    return { error: new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), { status: 401 }) };
+  }
+  return { idToken };
+}
+
+async function verifyAndLoadUser(idToken) {
+  const decoded = await admin.auth().verifyIdToken(idToken);
+  const uid = decoded.uid;
+  const userDoc = await db.collection('users').doc(uid).get();
+  const userData = userDoc.exists ? userDoc.data() : {};
+  const role = userData?.role || '';
+  const email = userData?.email || decoded.email || uid;
+  return { uid, role, email };
+}
+
 function daysInMonth(year, month1to12) {
   return new Date(year, month1to12, 0).getDate();
 }
@@ -57,100 +79,146 @@ function computeTotals(daysMap, meta) {
     laborables,
   };
 }
+function sanitizeDocId(s) {
+  return String(s).trim().replace(/[\/#?[\]]/g, '_');
+}
 
-// ========== GET: assistants + assistance for a month ==========
+// ---------- GET: assistants + assistance (mes) ----------
 export async function GET(req) {
   try {
+    const auth = requireBearer(req);
+    if (auth.error) return auth.error;
+    const { idToken } = auth;
+
+    const { role } = await verifyAndLoadUser(idToken);
+    if (!role) {
+      return new Response(JSON.stringify({ error: 'Forbidden: No role assigned' }), { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const month = searchParams.get('month') || new Date().toISOString().slice(0, 7);
 
-    // assistants
-    const assistantsSnap = await db.collection('assistants').get();
-    const assistants = assistantsSnap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() || {}),
-    }));
+    const assistantsSnap = await db.collection('assistants').orderBy('fullName').get();
+    const assistants = assistantsSnap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
 
-    // assistance for that month
     const assistSnap = await db.collection('assistance').where('month', '==', month).get();
-    const assistance = assistSnap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() || {}),
-    }));
+    const assistance = assistSnap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
 
-    return NextResponse.json({ assistants, assistance });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+    return new Response(JSON.stringify({ assistants, assistance }), { status: 200 });
+  } catch (error) {
+    console.error('GET admin-assistance error:', error);
+    return new Response(JSON.stringify({ error: error.message || String(error) }), { status: 500 });
   }
 }
 
-// ========== POST: create assistant or update a day ==========
+// ---------- POST: crear asistente ó marcar día ----------
 export async function POST(req) {
   try {
-    const { searchParams } = new URL(req.url);
+    const auth = requireBearer(req);
+    if (auth.error) return auth.error;
+    const { idToken } = auth;
 
-    // --- Create assistant ---
-    if (searchParams.get('createAssistant') === '1') {
-      const body = await req.json();
-      const fullName = String(body.fullName || '').trim();
-      const documentNumber = String(body.documentNumber || '').trim();
-      if (!fullName || !documentNumber) {
-        return NextResponse.json({ error: 'fullName y documentNumber son requeridos' }, { status: 400 });
-      }
-
-      // usa documentNumber como docId (estable y único)
-      const ref = db.collection('assistants').doc(documentNumber);
-      await ref.set(
-        {
-          fullName,
-          documentNumber,
-          active: true,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      return NextResponse.json({ ok: true, id: ref.id });
+    const actor = await verifyAndLoadUser(idToken);
+    if (!actor.role) {
+      return new Response(JSON.stringify({ error: 'Forbidden: No role assigned' }), { status: 403 });
     }
 
-    // --- Update a single day ---
+    const { searchParams } = new URL(req.url);
+
+    // --- Crear asistente ---
+    if (searchParams.get('createAssistant') === '1') {
+      // Solo admin/superadmin crean asistentes
+      if (actor.role !== 'admin' && actor.role !== 'superadmin') {
+        return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403 });
+      }
+
+      const body = await req.json();
+      const fullName = String(body.fullName || '').trim();
+      const documentNumberRaw = String(body.documentNumber || '').trim();
+      if (!fullName || !documentNumberRaw) {
+        return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
+      }
+
+      const docId = sanitizeDocId(documentNumberRaw);
+      const ref = db.collection('assistants').doc(docId);
+
+      const exists = await ref.get();
+      if (exists.exists) {
+        return new Response(JSON.stringify({ error: 'Assistant already exists' }), { status: 409 });
+      }
+
+      await ref.set({
+        fullName,
+        documentNumber: documentNumberRaw,
+        active: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdBy: actor.email,
+      });
+
+      // Log
+      await db.collection('logs').add({
+        action: 'crear_asistente',
+        details: `Asistente '${fullName}' creado (doc: ${docId}).`,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        performedBy: actor.email,
+        meta: { assistantId: docId, documentNumber: documentNumberRaw, page: 'asistencias' },
+      });
+
+      return new Response(JSON.stringify({ success: true, id: docId }), { status: 200 });
+    }
+
+    // --- Marcar un día (P/A/T/J) ---
+    // También exigimos admin/superadmin (ajústalo si quieres permitir a otros roles)
+    if (actor.role !== 'admin' && actor.role !== 'superadmin') {
+      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403 });
+    }
+
     const body = await req.json();
-    const assistantId = String(body.assistantId || '').trim();
-    const date = String(body.date || '').trim(); // YYYY-MM-DD
+    const assistantId = sanitizeDocId(body.assistantId || '');
+    const date = String(body.date || '').trim();  // YYYY-MM-DD
     const status = String(body.status || '').trim(); // 'P'|'A'|'T'|'J'|'N'
     const month = String(body.month || '').trim();   // YYYY-MM
 
     if (!assistantId || !date || !status || !month) {
-      return NextResponse.json({ error: 'assistantId, date, status, month requeridos' }, { status: 400 });
+      return new Response(JSON.stringify({ error: 'assistantId, date, status, month requeridos' }), { status: 400 });
     }
 
     const meta = monthMeta(month);
-    const docId = `${assistantId}_${month}`;
-    const ref = db.collection('assistance').doc(docId);
+    const assistDocId = `${assistantId}_${month}`;
+    const assistRef = db.collection('assistance').doc(assistDocId);
 
-    // merge day
-    await ref.set(
+    // set/merge día
+    await assistRef.set(
       {
         assistantId,
         month,
-        days: { [date]: status === 'N' ? admin.firestore.FieldValue.delete() : status }, // no guardamos fines de semana
+        days: {
+          [date]: status === 'N' ? admin.firestore.FieldValue.delete() : status
+        },
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
 
-    // recompute totals
-    const snap = await ref.get();
+    // recomputa totales
+    const snap = await assistRef.get();
     const data = snap.data() || {};
     const daysMap = { ...(data.days || {}) };
     const totals = computeTotals(daysMap, meta);
+    await assistRef.set({ totals }, { merge: true });
 
-    await ref.set({ totals }, { merge: true });
+    // Log
+    await db.collection('logs').add({
+      action: 'marcar_asistencia',
+      details: `Se marcó '${status}' para ${assistantId} en ${date}.`,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      performedBy: actor.email,
+      meta: { assistantId, date, status, month, page: 'asistencias' },
+    });
 
-    return NextResponse.json({ ok: true, id: docId, totals });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+    return new Response(JSON.stringify({ success: true, id: assistDocId, totals }), { status: 200 });
+  } catch (error) {
+    console.error('POST admin-assistance error:', error);
+    return new Response(JSON.stringify({ error: error.message || String(error) }), { status: 500 });
   }
 }

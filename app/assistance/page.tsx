@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { auth } from '@/app/firebase/config';
 
 type Status = 'P' | 'A' | 'T' | 'J' | 'N';
 type Assistant = { id: string; fullName: string; documentNumber: string; active?: boolean };
@@ -159,15 +160,95 @@ export default function AssistancePage() {
     async function handleCreateAssistant(e: React.FormEvent) {
         e.preventDefault();
         if (!fullName.trim() || !documentNumber.trim()) return;
-        const payload = { fullName: fullName.trim(), documentNumber: documentNumber.trim() };
+
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) {
+            alert('Sesión no válida: vuelve a iniciar sesión.');
+            return;
+        }
+
+        const payload = {
+            fullName: fullName.trim(),
+            documentNumber: documentNumber.trim(),
+        };
+
         const res = await fetch('/api/admin-assistance?createAssistant=1', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${idToken}`, // ⬅️ MUY IMPORTANTE
+            },
+            body: JSON.stringify(payload),
         });
-        if (res.ok) {
-            setFullName(''); setDocumentNumber('');
-            setMonth((m) => m); setMode('table');
+
+        if (!res.ok) {
+            const msg = await res.text();
+            console.error('Error al crear asistente:', msg);
+            alert('No se pudo crear el asistente.\n\n' + msg);
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/admin-assistance?createAssistant=1', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const msg = await res.text();
+                console.error('Error al crear asistente:', msg);
+                alert('No se pudo crear el asistente.\n\n' + msg);
+                return;
+            }
+
+            // Limpia campos y vuelve a la tabla
+            setFullName('');
+            setDocumentNumber('');
+            setMode('table');
+
+            // Refresca la data del mes (dispara el useEffect que hace fetch)
+            setMonth((m) => m);
+
+            // === SuccessDiv (igual estilo al de Reportes) ===
+            let seconds = 2;
+            const successDiv = document.createElement('div');
+            successDiv.className =
+                'fixed bottom-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg ' +
+                'flex items-center gap-2 opacity-0 transition-opacity duration-500 z-50';
+            successDiv.innerHTML = `
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
+      </svg>
+      <span>¡Asistente agregado exitosamente! Actualizando en <span id="countdown">${seconds}</span>…</span>
+    `;
+            document.body.appendChild(successDiv);
+            // fade in
+            setTimeout(() => successDiv.classList.add('opacity-100'), 10);
+
+            const countdownInterval = setInterval(() => {
+                seconds -= 1;
+                const span = successDiv.querySelector('#countdown');
+                if (span) span.textContent = String(seconds);
+                if (seconds <= 0) {
+                    clearInterval(countdownInterval);
+                    successDiv.classList.remove('opacity-100');
+                    setTimeout(() => {
+                        successDiv.remove();
+                        // recarga suave: vuelve a disparar el fetch (ya lo hacemos con setMonth),
+                        // si prefieres forzar reload total, descomenta:
+                        // window.location.reload();
+                    }, 400);
+                }
+            }, 1000);
+            // === /SuccessDiv ===
+        } catch (err) {
+            console.error(err);
+            alert('Ocurrió un error inesperado al crear el asistente.');
         }
     }
+
 
     // 🔍 Filtro (nombre o documento)
     const filtered = useMemo(() => {
