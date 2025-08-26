@@ -11,7 +11,6 @@ if (!getApps().length) {
     throw new Error('FIREBASE_SERVICE_ACCOUNT no está definido');
   }
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  // Arregla saltos de línea de la private key por si vienen escapados
   if (serviceAccount.private_key) {
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
   }
@@ -60,16 +59,25 @@ function monthMeta(monthStr) {
   });
   return { y, m, total, items };
 }
+
+/**
+ * Totales:
+ * - Días hábiles (L-V) SIEMPRE cuentan en "laborables".
+ * - Fines de semana SOLO cuentan si ese día tiene un valor en "days" (lo interpretamos como "desbloqueado/registrado").
+ */
 function computeTotals(daysMap, meta) {
   let P = 0, A = 0, T = 0, J = 0, laborables = 0;
   for (const it of meta.items) {
-    if (it.isWeekend) continue;
+    const v = daysMap[it.iso];
+    if (it.isWeekend && typeof v === 'undefined') {
+      // sábado/domingo sin valor: no cuenta
+      continue;
+    }
     laborables++;
-    const s = daysMap[it.iso];
-    if (s === 'P') P++;
-    else if (s === 'A') A++;
-    else if (s === 'T') T++;
-    else if (s === 'J') J++;
+    if (v === 'P') P++;
+    else if (v === 'A') A++;
+    else if (v === 'T') T++;
+    else if (v === 'J') J++;
   }
   return {
     asistencia: laborables ? P / laborables : 0,
@@ -79,6 +87,7 @@ function computeTotals(daysMap, meta) {
     laborables,
   };
 }
+
 function sanitizeDocId(s) {
   return String(s).trim().replace(/[\/#?[\]]/g, '_');
 }
@@ -111,7 +120,7 @@ export async function GET(req) {
   }
 }
 
-// ---------- POST: crear asistente ó marcar día ----------
+// ---------- POST: crear asistente / marcar día / guardar nota ----------
 export async function POST(req) {
   try {
     const auth = requireBearer(req);
@@ -155,7 +164,6 @@ export async function POST(req) {
         createdBy: actor.email,
       });
 
-      // Log
       await db.collection('logs').add({
         action: 'crear_asistente',
         details: `Asistente '${fullName}' creado (doc: ${docId}).`,
@@ -167,54 +175,81 @@ export async function POST(req) {
       return new Response(JSON.stringify({ success: true, id: docId }), { status: 200 });
     }
 
-    // --- Marcar un día (P/A/T/J) ---
-    // También exigimos admin/superadmin (ajústalo si quieres permitir a otros roles)
+    // --- Marcar un día y/o guardar nota ---
+    // También exigimos admin/superadmin para marcar/editar (ajústalo si necesitas)
     if (actor.role !== 'admin' && actor.role !== 'superadmin') {
       return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403 });
     }
 
     const body = await req.json();
     const assistantId = sanitizeDocId(body.assistantId || '');
-    const date = String(body.date || '').trim();  // YYYY-MM-DD
-    const status = String(body.status || '').trim(); // 'P'|'A'|'T'|'J'|'N'
-    const month = String(body.month || '').trim();   // YYYY-MM
+    const date = String(body.date || '').trim();   // YYYY-MM-DD
+    const month = String(body.month || '').trim(); // YYYY-MM
+    const statusRaw = typeof body.status === 'string' ? String(body.status).trim() : undefined; // 'P'|'A'|'T'|'J'|'N'|undefined
+    const noteRaw = typeof body.note !== 'undefined' ? String(body.note) : undefined;            // string|''|undefined
 
-    if (!assistantId || !date || !status || !month) {
-      return new Response(JSON.stringify({ error: 'assistantId, date, status, month requeridos' }), { status: 400 });
+    if (!assistantId || !date || !month) {
+      return new Response(JSON.stringify({ error: 'assistantId, date y month son requeridos' }), { status: 400 });
+    }
+    if (typeof statusRaw === 'undefined' && typeof noteRaw === 'undefined') {
+      return new Response(JSON.stringify({ error: 'Debe enviarse status y/o note' }), { status: 400 });
     }
 
-    const meta = monthMeta(month);
     const assistDocId = `${assistantId}_${month}`;
     const assistRef = db.collection('assistance').doc(assistDocId);
 
-    // set/merge día
-    await assistRef.set(
-      {
-        assistantId,
-        month,
-        days: {
-          [date]: status === 'N' ? admin.firestore.FieldValue.delete() : status
-        },
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const updates = {
+      assistantId,
+      month,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: actor.email,
+    };
 
-    // recomputa totales
+    // status (si vino)
+    if (typeof statusRaw !== 'undefined') {
+      const valid = new Set(['P', 'A', 'T', 'J', 'N']);
+      if (!valid.has(statusRaw)) {
+        return new Response(JSON.stringify({ error: 'status inválido' }), { status: 400 });
+      }
+      updates[`days.${date}`] = statusRaw === 'N'
+        ? admin.firestore.FieldValue.delete()
+        : statusRaw;
+
+      await db.collection('logs').add({
+        action: 'marcar_asistencia',
+        details: `Se marcó '${statusRaw}' para ${assistantId} en ${date}.`,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        performedBy: actor.email,
+        meta: { assistantId, date, status: statusRaw, month, page: 'asistencias' },
+      });
+    }
+
+    // note (si vino)
+    if (typeof noteRaw !== 'undefined') {
+      if (String(noteRaw).trim() === '') {
+        updates[`notes.${date}`] = admin.firestore.FieldValue.delete();
+      } else {
+        updates[`notes.${date}`] = String(noteRaw);
+      }
+      await db.collection('logs').add({
+        action: 'asistencia_actualizar_nota',
+        details: `Nota para ${assistantId} en ${date} (${month})`,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        performedBy: actor.email,
+        meta: { assistantId, date, month, note: String(noteRaw).slice(0, 120), page: 'asistencias' },
+      });
+    }
+
+    // guardar cambios
+    await assistRef.set(updates, { merge: true });
+
+    // recomputa totales con nueva política (fines de semana cuentan si tienen valor)
+    const meta = monthMeta(month);
     const snap = await assistRef.get();
     const data = snap.data() || {};
     const daysMap = { ...(data.days || {}) };
     const totals = computeTotals(daysMap, meta);
     await assistRef.set({ totals }, { merge: true });
-
-    // Log
-    await db.collection('logs').add({
-      action: 'marcar_asistencia',
-      details: `Se marcó '${status}' para ${assistantId} en ${date}.`,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      performedBy: actor.email,
-      meta: { assistantId, date, status, month, page: 'asistencias' },
-    });
 
     return new Response(JSON.stringify({ success: true, id: assistDocId, totals }), { status: 200 });
   } catch (error) {

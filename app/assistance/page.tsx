@@ -10,6 +10,7 @@ type AssistanceDoc = {
   assistantId: string;
   month: string; // YYYY-MM
   days: Record<string, Status | undefined>;
+  notes?: Record<string, string | undefined>; // ← descripciones por día (ISO)
   totals?: { asistencia: number; ausencia: number; tardanza: number; justificacion: number; laborables: number };
 };
 type ApiGetResponse = { assistants: Assistant[]; assistance: AssistanceDoc[] };
@@ -42,10 +43,20 @@ function monthMeta(monthStr: string) {
   });
   return { year, month, total, items };
 }
-function computeTotals(map: Record<string, Status | undefined>, meta: ReturnType<typeof monthMeta>) {
+
+/** 
+ * Recuento de totales. 
+ * Si es fin de semana, SOLO cuenta si la columna está desbloqueada.
+ */
+function computeTotals(
+  map: Record<string, Status | undefined>,
+  meta: ReturnType<typeof monthMeta>,
+  unlockedWeekendCols: Record<string, boolean>
+) {
   let P = 0, A = 0, T = 0, J = 0, laborables = 0;
   for (const it of meta.items) {
-    if (it.isWeekend) continue;
+    // si es fin de semana y NO está desbloqueado, no cuenta
+    if (it.isWeekend && !unlockedWeekendCols[it.iso]) continue;
     laborables++;
     const s = map[it.iso];
     if (s === 'P') P++; else if (s === 'A') A++; else if (s === 'T') T++; else if (s === 'J') J++;
@@ -61,7 +72,7 @@ export default function AssistancePage() {
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState('');
 
-  // Auth state (espera a que cargue antes de hacer fetch)
+  // Auth
   const [user, userLoading] = useAuthState(auth);
 
   // Form
@@ -70,16 +81,16 @@ export default function AssistancePage() {
 
   const meta = useMemo(() => monthMeta(month), [month]);
 
-  // ---- altura dinámica como en Reports ----
+  // Altura dinámica tipo Reports
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const [tableHeight, setTableHeight] = useState<number>(520); // fallback
+  const [tableHeight, setTableHeight] = useState<number>(520);
 
   useEffect(() => {
     function recalc() {
       const el = cardRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const bottomGap = 24; // px de respiración
+      const bottomGap = 24;
       const h = Math.max(320, Math.floor(window.innerHeight - rect.top - bottomGap));
       setTableHeight(h);
     }
@@ -99,14 +110,12 @@ export default function AssistancePage() {
     return () => cancelAnimationFrame(id);
   }, [mode, month, q]);
 
-  // ===== Carga de asistentes/asistencias (GET) — espera a Auth =====
+  // ============ GET ============
   useEffect(() => {
     let ignore = false;
 
     (async () => {
-      if (userLoading) return; // espera a que Auth termine
-
-      // si no hay usuario, limpia y no llames al backend
+      if (userLoading) return;
       if (!user) {
         setAssistants([]);
         setAssistMap({});
@@ -116,7 +125,7 @@ export default function AssistancePage() {
 
       setLoading(true);
       try {
-        const idToken = await user.getIdToken(); // ← token del user
+        const idToken = await user.getIdToken();
         const res = await fetch(`/api/admin-assistance?month=${month}`, {
           cache: 'no-store',
           headers: { Authorization: `Bearer ${idToken}` },
@@ -133,11 +142,14 @@ export default function AssistancePage() {
         setAssistants(data.assistants || []);
         const map: Record<string, AssistanceDoc> = {};
         for (const a of data.assistants || []) {
+          const found = (data.assistance || []).find((d) => d.assistantId === a.id) || {};
           map[a.id] = {
             assistantId: a.id,
             month,
-            days: {},
-            ...(data.assistance || []).find((d) => d.assistantId === a.id),
+            ...found,
+            // asegura maps definidos
+            days: { ...(found as AssistanceDoc).days },
+            notes: { ...(found as AssistanceDoc).notes },
           };
         }
         setAssistMap(map);
@@ -153,13 +165,19 @@ export default function AssistancePage() {
     return () => { ignore = true; };
   }, [month, user, userLoading]);
 
+  /* =================== Fin de semana editable por columna =================== */
+  const [unlockedWeekendCols, setUnlockedWeekendCols] = useState<Record<string, boolean>>({});
+  function isWeekendEditable(iso: string) { return !!unlockedWeekendCols[iso]; }
+  function toggleWeekend(iso: string) { setUnlockedWeekendCols(prev => ({ ...prev, [iso]: !prev[iso] })); }
+
+  // ============ Guardar estado de un día ============
   async function saveDay(assistantId: string, isoDate: string, status: Status) {
-    // actualización optimista en UI
+    // Optimista
     setAssistMap((prev) => {
       const next = { ...prev };
       const doc = { ...next[assistantId] };
       doc.days = { ...doc.days, [isoDate]: status };
-      doc.totals = computeTotals(doc.days, meta);
+      doc.totals = computeTotals(doc.days, meta, unlockedWeekendCols);
       next[assistantId] = doc;
       return next;
     });
@@ -167,15 +185,11 @@ export default function AssistancePage() {
     try {
       if (userLoading) return;
       if (!user) throw new Error('Sesión no válida');
-
       const idToken = await user.getIdToken();
 
       await fetch('/api/admin-assistance', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ assistantId, date: isoDate, status, month }),
       });
     } catch (e) {
@@ -183,18 +197,7 @@ export default function AssistancePage() {
     }
   }
 
-  /* =================== Fin de semana editable por columna =================== */
-  // columnas de fin de semana desbloqueadas (por ISO: YYYY-MM-DD)
-  const [unlockedWeekendCols, setUnlockedWeekendCols] = useState<Record<string, boolean>>({});
-  function isWeekendEditable(iso: string) {
-    return !!unlockedWeekendCols[iso];
-  }
-  function toggleWeekend(iso: string) {
-    setUnlockedWeekendCols(prev => ({ ...prev, [iso]: !prev[iso] }));
-  }
-
   function cycleStatus(current: Status | undefined, isWeekend: boolean, iso: string): Status {
-    // si es fin de semana pero la columna está bloqueada: no se edita
     if (isWeekend && !isWeekendEditable(iso)) return 'N';
     const i = STATUS_ORDER.indexOf((current as Status) || '');
     return i < 0 ? 'P' : STATUS_ORDER[(i + 1) % STATUS_ORDER.length];
@@ -207,75 +210,115 @@ export default function AssistancePage() {
     await saveDay(aid, iso, next);
   }
 
-  // ===== Crear asistente (POST) — espera a Auth y usa token del user =====
+  // ============ Crear asistente ============
   async function handleCreateAssistant(e: React.FormEvent) {
     e.preventDefault();
     if (!fullName.trim() || !documentNumber.trim()) return;
 
     try {
-      if (userLoading) return;              // espera a Auth
+      if (userLoading) return;
       if (!user) throw new Error('Sesión no válida');
 
       const idToken = await user.getIdToken();
+      const payload = { fullName: fullName.trim(), documentNumber: documentNumber.trim() };
 
-      const payload = {
-        fullName: fullName.trim(),
-        documentNumber: documentNumber.trim(),
-      };
-
-      const res = await fetch('/api/admin-assistance?createAssistant=1', {
+      const resp = await fetch('/api/admin-assistance?createAssistant=1', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`, // ⬅️ obligatorio
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const msg = await res.text();
+      if (!resp.ok) {
+        const msg = await resp.text();
         console.error('Error al crear asistente:', msg);
         alert('No se pudo crear el asistente.\n\n' + msg);
-        return; // no muestres success si falla
+        return;
       }
 
-      // limpiar y refrescar
-      setFullName('');
-      setDocumentNumber('');
-      setMode('table');
-      setMonth((m) => m); // re-dispara el GET
+      setFullName(''); setDocumentNumber(''); setMode('table'); setMonth(m => m);
 
       // SuccessDiv
       let seconds = 2;
-      const successDiv = document.createElement('div');
-      successDiv.className =
-        'fixed bottom-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg ' +
-        'flex items-center gap-2 opacity-0 transition-opacity duration-500 z-50';
-      successDiv.innerHTML = `
+      const div = document.createElement('div');
+      div.className = 'fixed bottom-4 right-4 bg-green-500 text-white p-4 rounded-lg shadow-lg flex items-center gap-2 opacity-0 transition-opacity duration-500 z-50';
+      div.innerHTML = `
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M9 12l2 2 4-4m5.586-6.586a2 2 0 00-2.828 0l-10 10a2 2 0 000 2.828l3.172 3.172a2 2 0 002.828 0l10-10a2 2 0 000-2.828z"></path>
         </svg>
         <span>¡Asistente agregado exitosamente! Actualizando en <span id="countdown">${seconds}</span>…</span>
       `;
-      document.body.appendChild(successDiv);
-      setTimeout(() => successDiv.classList.add('opacity-100'), 10);
-
-      const countdownInterval = setInterval(() => {
+      document.body.appendChild(div);
+      setTimeout(() => div.classList.add('opacity-100'), 10);
+      const t = setInterval(() => {
         seconds -= 1;
-        const span = successDiv.querySelector('#countdown');
+        const span = div.querySelector('#countdown');
         if (span) span.textContent = String(seconds);
-        if (seconds <= 0) {
-          clearInterval(countdownInterval);
-          successDiv.classList.remove('opacity-100');
-          setTimeout(() => successDiv.remove(), 400);
-        }
+        if (seconds <= 0) { clearInterval(t); div.classList.remove('opacity-100'); setTimeout(() => div.remove(), 400); }
       }, 1000);
     } catch (err) {
       console.error(err);
       alert('Ocurrió un error inesperado al crear el asistente.');
     }
   }
+
+  // ============ Notas (descripciones por día) ============
+  type NoteEditor = { assistantId: string; iso: string; x: number; y: number; value: string };
+  const [noteEditor, setNoteEditor] = useState<NoteEditor | null>(null);
+
+  function openNoteEditor(e: React.MouseEvent, aid: string, iso: string) {
+    e.preventDefault(); // evita el menú del navegador
+    const current = assistMap[aid]?.notes?.[iso] ?? '';
+    setNoteEditor({ assistantId: aid, iso, x: e.clientX, y: e.clientY, value: String(current) });
+  }
+
+  async function saveNote(aid: string, iso: string, text: string) {
+    // optimista
+    setAssistMap(prev => {
+      const next = { ...prev };
+      const doc = { ...next[aid] };
+      const notes = { ...(doc.notes || {}) };
+      if (text.trim() === '') delete notes[iso];
+      else notes[iso] = text;
+      doc.notes = notes;
+      // totales NO cambian por nota
+      next[aid] = doc;
+      return next;
+    });
+
+    try {
+      if (userLoading) return;
+      if (!user) throw new Error('Sesión no válida');
+      const idToken = await user.getIdToken();
+
+      await fetch('/api/admin-assistance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ assistantId: aid, date: iso, note: text, month }),
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // Cierra el editor si haces click fuera o presionas Escape
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setNoteEditor(null);
+    }
+    function onClick(e: MouseEvent) {
+      const n = document.getElementById('note-popover');
+      if (n && !n.contains(e.target as Node)) setNoteEditor(null);
+    }
+    if (noteEditor) {
+      window.addEventListener('keydown', onKey);
+      window.addEventListener('mousedown', onClick);
+    }
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onClick);
+    };
+  }, [noteEditor]);
 
   // 🔍 Filtro (nombre o documento)
   const filtered = useMemo(() => {
@@ -327,29 +370,23 @@ export default function AssistancePage() {
             className="w-full max-w-md space-y-4 bg-white/95 p-6 rounded-xl shadow-xl text-gray-900"
           >
             <div>
-              <label className="block text-sm font-semibold text-gray-800 mb-1">
-                Nombre completo
-              </label>
+              <label className="block text-sm font-semibold text-gray-800 mb-1">Nombre completo</label>
               <input
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Nombre completo"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 placeholder-gray-400
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-800 mb-1">
-                Nº Documento
-              </label>
+              <label className="block text-sm font-semibold text-gray-800 mb-1">Nº Documento</label>
               <input
                 value={documentNumber}
                 onChange={(e) => setDocumentNumber(e.target.value)}
                 placeholder="Nº Documento"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 placeholder-gray-400
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               />
             </div>
@@ -357,8 +394,7 @@ export default function AssistancePage() {
             <button
               type="submit"
               disabled={userLoading || !user}
-              className="block mx-auto px-5 py-2.5 rounded-lg bg-green-600 text-white font-medium
-                hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-60"
+              className="block mx-auto px-5 py-2.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-60"
             >
               Guardar
             </button>
@@ -372,7 +408,7 @@ export default function AssistancePage() {
             <div className="overflow-y-auto" style={{ height: tableHeight }}>
               <table className="min-w-[1100px] w-full text-sm text-gray-800">
                 <thead>
-                  {/* Fila 1: títulos (número del día) */}
+                  {/* Fila 1: números */}
                   <tr className="bg-gray-100 text-gray-700">
                     <th
                       className="px-2 py-2 text-left sticky left-0 bg-gray-100 z-10"
@@ -398,8 +434,7 @@ export default function AssistancePage() {
                               : undefined
                           }
                         >
-                          {d.day}
-                          {d.isWeekend ? (isWeekendEditable(d.iso) ? ' 🔓' : ' 🔒') : ''}
+                          {d.day}{d.isWeekend ? (isWeekendEditable(d.iso) ? ' 🔓' : ' 🔒') : ''}
                         </button>
                       </th>
                     ))}
@@ -409,7 +444,7 @@ export default function AssistancePage() {
                     <th className="px-2 py-2 text-center">JUSTIFICACIÓN</th>
                   </tr>
 
-                  {/* Fila 2: letra del día (sticky dentro del scroll vertical) */}
+                  {/* Fila 2: letras */}
                   <tr className="bg-gray-50 text-gray-700 sticky top-0 z-10">
                     <th
                       className="px-2 py-1 sticky left-0 bg-gray-50 z-10"
@@ -450,8 +485,9 @@ export default function AssistancePage() {
                   )}
 
                   {!loading && filtered.map((a) => {
-                    const doc = assistMap[a.id] || { assistantId: a.id, month, days: {} };
-                    const totals = computeTotals(doc.days, meta);
+                    const doc = assistMap[a.id] || { assistantId: a.id, month, days: {}, notes: {} };
+                    const totals = computeTotals(doc.days, meta, unlockedWeekendCols);
+
                     return (
                       <tr key={a.id} className="border-t">
                         {/* stickies */}
@@ -483,16 +519,30 @@ export default function AssistancePage() {
                           const label =
                             s === 'P' ? 'P' : s === 'A' ? 'A' : s === 'T' ? 'T' : s === 'J' ? 'J' : '—';
 
+                          const noteText = doc.notes?.[d.iso];
+
                           return (
                             <td key={d.iso} className="px-0.5 py-1 text-center">
-                              <button
-                                type="button"
-                                className={`w-7 h-7 rounded text-xs font-bold ${color}`}
-                                onClick={() => handleCellClick(a.id, d.iso, d.isWeekend)}
-                                title={d.isWeekend ? (weekendLocked ? 'Fin de semana (bloqueado)' : 'Fin de semana (editable)') : 'Clic para cambiar estado'}
-                              >
-                                {label}
-                              </button>
+                              <span className="relative inline-block">
+                                <button
+                                  type="button"
+                                  className={`w-7 h-7 rounded text-xs font-bold ${color}`}
+                                  onClick={() => handleCellClick(a.id, d.iso, d.isWeekend)}
+                                  onContextMenu={(e) => openNoteEditor(e, a.id, d.iso)}
+                                  title={
+                                    d.isWeekend
+                                      ? (weekendLocked ? 'Fin de semana (bloqueado)' : 'Fin de semana (editable)')
+                                      : 'Clic para cambiar estado'
+                                  }
+                                >
+                                  {label}
+                                </button>
+
+                                {/* indicador si hay nota */}
+                                {noteText && (
+                                  <span className="absolute -right-0.5 -bottom-0.5 w-1.5 h-1.5 rounded-full bg-blue-600" />
+                                )}
+                              </span>
                             </td>
                           );
                         })}
@@ -507,6 +557,57 @@ export default function AssistancePage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popover de notas */}
+      {noteEditor && (
+        <div
+          id="note-popover"
+          className="fixed z-50 bg-white rounded-lg shadow-xl border p-3 w-[260px]"
+          style={{
+            top: Math.min(noteEditor.y, window.innerHeight - 200),
+            left: Math.min(noteEditor.x, window.innerWidth - 280),
+          }}
+        >
+          <div className="text-xs font-medium mb-1 text-gray-700">
+            Descripción para {noteEditor.iso}
+          </div>
+          <textarea
+            className="w-full h-24 border rounded p-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={noteEditor.value}
+            onChange={(e) => setNoteEditor({ ...noteEditor, value: e.target.value })}
+            placeholder="Escribe una descripción…"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <button
+              className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+              onClick={async () => {
+                await saveNote(noteEditor.assistantId, noteEditor.iso, noteEditor.value.trim());
+                setNoteEditor(null);
+              }}
+            >
+              Guardar
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className="px-2 py-1.5 rounded bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
+                onClick={() => setNoteEditor(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="px-2 py-1.5 rounded bg-red-100 text-red-700 text-sm hover:bg-red-200"
+                onClick={async () => {
+                  await saveNote(noteEditor.assistantId, noteEditor.iso, '');
+                  setNoteEditor(null);
+                }}
+                title="Eliminar nota"
+              >
+                Borrar
+              </button>
             </div>
           </div>
         </div>
