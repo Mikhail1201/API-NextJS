@@ -41,7 +41,7 @@ function monthMeta(monthStr) {
 function computeTotals(daysMap, meta) {
   let P = 0, A = 0, T = 0, J = 0, laborables = 0;
   for (const it of meta.items) {
-    if (it.isWeekend) continue; // por defecto (los findes no cuentan desde backend)
+    if (it.isWeekend) continue;
     laborables++;
     const s = daysMap[it.iso];
     if (s === 'P') P++; else if (s === 'A') A++; else if (s === 'T') T++; else if (s === 'J') J++;
@@ -55,7 +55,11 @@ export async function GET(req) {
     const auth = requireBearer(req); if (auth.error) return auth.error;
     const { idToken } = auth;
     const actor = await verifyAndLoadUser(idToken);
-    if (!actor.role) return new Response(JSON.stringify({ error: 'Forbidden: No role assigned' }), { status: 403 });
+
+    // ⬅️ Toda esta página requiere SUPERADMIN
+    if (actor.role !== 'superadmin') {
+      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403 });
+    }
 
     const { searchParams } = new URL(req.url);
     const month = searchParams.get('month') || new Date().toISOString().slice(0, 7);
@@ -66,7 +70,7 @@ export async function GET(req) {
     const assistSnap = await db.collection('assistance').where('month', '==', month).get();
     const assistance = assistSnap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
 
-    // ⬅️ NUEVO: cargar notas del mes
+    // Notas del mes (colección separada)
     const notesSnap = await db.collection('assistance_notes').where('month', '==', month).get();
     const notesByAssistant = {};
     notesSnap.forEach(doc => {
@@ -88,25 +92,28 @@ export async function POST(req) {
     const auth = requireBearer(req); if (auth.error) return auth.error;
     const { idToken } = auth;
     const actor = await verifyAndLoadUser(idToken);
-    if (!actor.role) return new Response(JSON.stringify({ error: 'Forbidden: No role assigned' }), { status: 403 });
+
+    // ⬅️ Todas las operaciones aquí exigen SUPERADMIN
+    if (actor.role !== 'superadmin') {
+      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403 });
+    }
 
     const { searchParams } = new URL(req.url);
 
-    // ---- Crear asistente
+    // --- Crear asistente ---
     if (searchParams.get('createAssistant') === '1') {
-      if (actor.role !== 'admin' && actor.role !== 'superadmin') {
-        return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403 });
-      }
       const body = await req.json();
       const fullName = String(body.fullName || '').trim();
       const documentNumberRaw = String(body.documentNumber || '').trim();
-      if (!fullName || !documentNumberRaw) return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
-
+      if (!fullName || !documentNumberRaw) {
+        return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
+      }
       const docId = sanitizeDocId(documentNumberRaw);
       const ref = db.collection('assistants').doc(docId);
       const exists = await ref.get();
-      if (exists.exists) return new Response(JSON.stringify({ error: 'Assistant already exists' }), { status: 409 });
-
+      if (exists.exists) {
+        return new Response(JSON.stringify({ error: 'Assistant already exists' }), { status: 409 });
+      }
       await ref.set({
         fullName,
         documentNumber: documentNumberRaw,
@@ -124,38 +131,57 @@ export async function POST(req) {
       return new Response(JSON.stringify({ success: true, id: docId }), { status: 200 });
     }
 
-    // ---- Marcar día o guardar nota
-    if (actor.role !== 'admin' && actor.role !== 'superadmin') {
-      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403 });
+    // --- Eliminar asistente (y sus datos asociados) ---
+    if (searchParams.get('deleteAssistant') === '1') {
+      const body = await req.json();
+      const assistantId = sanitizeDocId(body.assistantId || '');
+      if (!assistantId) return new Response(JSON.stringify({ error: 'assistantId requerido' }), { status: 400 });
+
+      // borra doc principal
+      await db.collection('assistants').doc(assistantId).delete();
+
+      // borra assistance*
+      const assistSnap = await db.collection('assistance').where('assistantId', '==', assistantId).get();
+      const batch1 = db.batch();
+      assistSnap.docs.forEach(d => batch1.delete(d.ref));
+      await batch1.commit();
+
+      // borra notes*
+      const notesSnap = await db.collection('assistance_notes').where('assistantId', '==', assistantId).get();
+      const batch2 = db.batch();
+      notesSnap.docs.forEach(d => batch2.delete(d.ref));
+      await batch2.commit();
+
+      await db.collection('logs').add({
+        action: 'eliminar_asistente',
+        details: `Asistente '${assistantId}' eliminado (y sus datos asociados).`,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        performedBy: actor.email,
+        meta: { assistantId, page: 'asistencias' },
+      });
+
+      return new Response(JSON.stringify({ success: true, id: assistantId }), { status: 200 });
     }
 
+    // --- Guardar nota ---
     const body = await req.json();
     const assistantId = sanitizeDocId(body.assistantId || '');
-    const date = String(body.date || '').trim();  // YYYY-MM-DD
-    const month = String(body.month || '').trim(); // YYYY-MM
+    const date = String(body.date || '').trim();
+    const month = String(body.month || '').trim();
     if (!assistantId || !date || !month) {
       return new Response(JSON.stringify({ error: 'assistantId, date, month requeridos' }), { status: 400 });
     }
 
-    // ⬅️ Si viene "note", trabajar en la colección assistance_notes
     if (typeof body.note !== 'undefined') {
       const text = String(body.note || '').trim();
       const noteId = `${assistantId}_${date}`;
       const noteRef = db.collection('assistance_notes').doc(noteId);
-
-      if (text === '') {
-        // borrar si existe
-        await noteRef.delete();
-      } else {
-        await noteRef.set({
-          assistantId,
-          date,
-          month,
-          text,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedBy: actor.email,
-        }, { merge: true });
-      }
+      if (text === '') await noteRef.delete();
+      else await noteRef.set({
+        assistantId, date, month, text,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: actor.email,
+      }, { merge: true });
 
       await db.collection('logs').add({
         action: text ? 'guardar_nota' : 'borrar_nota',
@@ -164,12 +190,11 @@ export async function POST(req) {
         performedBy: actor.email,
         meta: { assistantId, date, month, page: 'asistencias' },
       });
-
       return new Response(JSON.stringify({ success: true, noteId }), { status: 200 });
     }
 
-    // ⬅️ Si viene "status", actualizar asistencia (misma lógica de antes)
-    const status = String(body.status || '').trim(); // 'P'|'A'|'T'|'J'|'N'
+    // --- Marcar día (P/A/T/J) ---
+    const status = String(body.status || '').trim();
     if (!status) return new Response(JSON.stringify({ error: 'status requerido' }), { status: 400 });
 
     const assistDocId = `${assistantId}_${month}`;
@@ -178,20 +203,16 @@ export async function POST(req) {
       {
         assistantId,
         month,
-        days: {
-          [date]: status === 'N' ? admin.firestore.FieldValue.delete() : status,
-        },
+        days: { [date]: status === 'N' ? admin.firestore.FieldValue.delete() : status },
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
 
-    // recomputa totales con regla por defecto (findes no cuentan en backend)
     const snap = await assistRef.get();
     const data = snap.data() || {};
     const meta = monthMeta(month);
-    const daysMap = { ...(data.days || {}) };
-    const totals = computeTotals(daysMap, meta);
+    const totals = computeTotals({ ...(data.days || {}) }, meta);
     await assistRef.set({ totals }, { merge: true });
 
     await db.collection('logs').add({

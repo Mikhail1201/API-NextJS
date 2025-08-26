@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
+import { useRouter } from 'next/navigation';
 
 type Status = 'P' | 'A' | 'T' | 'J' | 'N';
 type Assistant = { id: string; fullName: string; documentNumber: string; active?: boolean };
@@ -10,20 +11,19 @@ type AssistanceDoc = {
   assistantId: string;
   month: string; // YYYY-MM
   days: Record<string, Status | undefined>;
-  notes?: Record<string, string | undefined>; // ← ahora proviene de assistance_notes
+  notes?: Record<string, string | undefined>;
   totals?: { asistencia: number; ausencia: number; tardanza: number; justificacion: number; laborables: number };
 };
 
-// ⬅️ NUEVO: el GET devuelve también las notas agrupadas por asistente
 type ApiGetResponse = {
   assistants: Assistant[];
   assistance: AssistanceDoc[];
-  notesByAssistant?: Record<string, Record<string, string>>; // { [assistantId]: { [ISO]: text } }
+  notesByAssistant?: Record<string, Record<string, string>>;
 };
 
 const STATUS_ORDER: Status[] = ['P', 'A', 'T', 'J'];
-const DOC_COL_W = 150;  // px
-const NAME_COL_W = 260; // px
+const DOC_COL_W = 150;
+const NAME_COL_W = 260;
 
 function toMonthString(d = new Date()) {
   const y = d.getFullYear();
@@ -42,7 +42,7 @@ function monthMeta(monthStr: string) {
   const items = Array.from({ length: total }, (_, i) => {
     const day = i + 1;
     const d = new Date(year, month - 1, day);
-    const dow = d.getDay(); // 0..6
+    const dow = d.getDay();
     const isWeekend = dow === 0 || dow === 6;
     const iso = d.toISOString().slice(0, 10);
     return { day, iso, dow, letter: letters[dow], isWeekend };
@@ -66,31 +66,32 @@ function computeTotals(
 }
 
 export default function AssistancePage() {
+  const router = useRouter();
+
   const [month, setMonth] = useState<string>(toMonthString());
-  const [mode, setMode] = useState<'table' | 'form'>('table');
+  const [mode, setMode] = useState<'table' | 'add' | 'delete'>('table');
   const [assistants, setAssistants] = useState<Assistant[]>([]);
   const [assistMap, setAssistMap] = useState<Record<string, AssistanceDoc>>({});
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState('');
   const [user, userLoading] = useAuthState(auth);
 
-  // Form
+  // Form add
   const [fullName, setFullName] = useState('');
   const [documentNumber, setDocumentNumber] = useState('');
+  // Form delete
+  const [assistantToDelete, setAssistantToDelete] = useState<string>('');
 
   const meta = useMemo(() => monthMeta(month), [month]);
 
-  // Altura dinámica (como Reports)
+  // Altura dinámica
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [tableHeight, setTableHeight] = useState<number>(520);
-
   useEffect(() => {
     function recalc() {
-      const el = cardRef.current;
-      if (!el) return;
+      const el = cardRef.current; if (!el) return;
       const rect = el.getBoundingClientRect();
-      const bottomGap = 24;
-      const h = Math.max(320, Math.floor(window.innerHeight - rect.top - bottomGap));
+      const h = Math.max(320, Math.floor(window.innerHeight - rect.top - 24));
       setTableHeight(h);
     }
     recalc();
@@ -99,25 +100,21 @@ export default function AssistancePage() {
   }, []);
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      const el = cardRef.current;
-      if (!el) return;
+      const el = cardRef.current; if (!el) return;
       const rect = el.getBoundingClientRect();
-      const bottomGap = 24;
-      const h = Math.max(320, Math.floor(window.innerHeight - rect.top - bottomGap));
+      const h = Math.max(320, Math.floor(window.innerHeight - rect.top - 24));
       setTableHeight(h);
     });
     return () => cancelAnimationFrame(id);
   }, [mode, month, q]);
 
-  // ===== GET =====
+  // ===== Cargar data (y exigir SUPERADMIN) =====
   useEffect(() => {
     let ignore = false;
     (async () => {
       if (userLoading) return;
-      if (!user) {
-        setAssistants([]); setAssistMap({}); setLoading(false);
-        return;
-      }
+      if (!user) { router.push('/'); return; }
+
       setLoading(true);
       try {
         const idToken = await user.getIdToken();
@@ -125,6 +122,9 @@ export default function AssistancePage() {
           cache: 'no-store',
           headers: { Authorization: `Bearer ${idToken}` },
         });
+
+        // Si no es superadmin, la API devuelve 403 → volver al home
+        if (res.status === 403) { router.push('/'); return; }
         if (!res.ok) throw new Error(await res.text());
 
         const data: ApiGetResponse = await res.json();
@@ -140,29 +140,26 @@ export default function AssistancePage() {
             assistantId: a.id,
             month,
             days: found?.days ?? {},
-            // ⬅️ notas vienen de la colección independiente
             notes: notesByAssistant[a.id] ?? {},
             totals: found?.totals,
           };
         }
         setAssistMap(map);
-      } catch (err) {
-        console.error(err);
+      } catch (e) {
+        console.error(e);
         setAssistants([]); setAssistMap({});
       } finally {
         if (!ignore) setLoading(false);
       }
     })();
     return () => { ignore = true; };
-  }, [month, user, userLoading]);
+  }, [month, user, userLoading, router]);
 
   /* ===== Fin de semana editable por columna ===== */
   const [unlockedWeekendCols, setUnlockedWeekendCols] = useState<Record<string, boolean>>({});
   const isWeekendEditable = (iso: string) => !!unlockedWeekendCols[iso];
-  const toggleWeekend = (iso: string) =>
-    setUnlockedWeekendCols(prev => ({ ...prev, [iso]: !prev[iso] }));
+  const toggleWeekend = (iso: string) => setUnlockedWeekendCols(prev => ({ ...prev, [iso]: !prev[iso] }));
 
-  // Recalcula % al (des)bloquear fines de semana
   useEffect(() => {
     setAssistMap(prev => {
       const next: typeof prev = {};
@@ -195,11 +192,8 @@ export default function AssistancePage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ assistantId, date: isoDate, status, month }),
       });
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }
-
   function cycleStatus(current: Status | undefined, isWeekend: boolean, iso: string): Status {
     if (isWeekend && !isWeekendEditable(iso)) return 'N';
     const i = STATUS_ORDER.indexOf((current as Status) || '');
@@ -212,7 +206,7 @@ export default function AssistancePage() {
     await saveDay(aid, iso, next);
   }
 
-  // ===== Crear asistente =====
+  // ===== Agregar asistente =====
   async function handleCreateAssistant(e: React.FormEvent) {
     e.preventDefault();
     if (!fullName.trim() || !documentNumber.trim()) return;
@@ -227,36 +221,47 @@ export default function AssistancePage() {
       });
       if (!resp.ok) { alert(await resp.text()); return; }
       setFullName(''); setDocumentNumber(''); setMode('table'); setMonth(m => m);
+      toast('¡Asistente agregado!');
+    } catch (err) { console.error(err); alert('Error al crear asistente'); }
+  }
 
-      // successDiv corto
-      let s = 2;
-      const div = document.createElement('div');
-      div.className =
-        'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg opacity-0 transition-opacity z-50';
-      div.innerHTML = `Asistente agregado. Cerrando en <b id="kk">${s}</b>s`;
-      document.body.appendChild(div);
-      setTimeout(() => div.classList.add('opacity-100'), 10);
-      const t = setInterval(() => {
-        s -= 1; const k = div.querySelector('#kk'); if (k) k.textContent = String(s);
-        if (s <= 0) { clearInterval(t); div.classList.remove('opacity-100'); setTimeout(() => div.remove(), 300); }
-      }, 1000);
-    } catch (err) {
-      console.error(err); alert('Error al crear asistente');
-    }
+  // ===== Eliminar asistente =====
+  async function handleDeleteAssistant(e: React.FormEvent) {
+    e.preventDefault();
+    if (!assistantToDelete) return;
+    if (!confirm('¿Seguro que deseas eliminar a este asistente? Se eliminarán también sus asistencias y notas.')) return;
+
+    try {
+      if (userLoading) return;
+      if (!user) throw new Error('Sesión no válida');
+      const idToken = await user.getIdToken();
+      const resp = await fetch('/api/admin-assistance?deleteAssistant=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ assistantId: assistantToDelete }),
+      });
+      if (!resp.ok) { alert(await resp.text()); return; }
+
+      // Quitar de la UI
+      setAssistants(prev => prev.filter(a => a.id !== assistantToDelete));
+      setAssistMap(prev => {
+        const n = { ...prev }; delete n[assistantToDelete]; return n;
+      });
+      setAssistantToDelete('');
+      setMode('table');
+      toast('Asistente eliminado.');
+    } catch (err) { console.error(err); alert('No se pudo eliminar.'); }
   }
 
   // ===== Notas (colección separada) =====
   type NoteEditor = { assistantId: string; iso: string; x: number; y: number; value: string };
   const [noteEditor, setNoteEditor] = useState<NoteEditor | null>(null);
 
-  // Abre con la NOTA ACTUAL (viene de notesByAssistant)
   function openNoteEditor(e: React.MouseEvent, aid: string, iso: string) {
     e.preventDefault();
     const current = assistMap[aid]?.notes?.[iso] ?? '';
     setNoteEditor({ assistantId: aid, iso, x: e.clientX, y: e.clientY, value: String(current) });
   }
-
-  // Si el mapa cambia (p.ej. tras guardar), actualiza el texto visible
   useEffect(() => {
     if (!noteEditor) return;
     const latest = assistMap[noteEditor.assistantId]?.notes?.[noteEditor.iso] ?? '';
@@ -265,15 +270,12 @@ export default function AssistancePage() {
   }, [assistMap]);
 
   async function saveNote(aid: string, iso: string, text: string) {
-    // Optimista
     setAssistMap(prev => {
       const next = { ...prev };
       const doc = { ...next[aid] };
       const notes = { ...(doc.notes || {}) };
       if (text.trim() === '') delete notes[iso]; else notes[iso] = text;
-      doc.notes = notes;
-      next[aid] = doc;
-      return next;
+      doc.notes = notes; next[aid] = doc; return next;
     });
 
     try {
@@ -283,15 +285,11 @@ export default function AssistancePage() {
       await fetch('/api/admin-assistance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        // ⬅️ ahora enviamos "note" y la API lo guarda en assistance_notes
         body: JSON.stringify({ assistantId: aid, date: iso, note: text, month }),
       });
-    } catch (err) {
-      console.error(err);
-    }
+    } catch (err) { console.error(err); }
   }
 
-  // cerrar popover (ESC / click fuera)
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setNoteEditor(null); }
     function onClick(e: MouseEvent) {
@@ -305,15 +303,40 @@ export default function AssistancePage() {
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return assistants;
-    return assistants.filter(a =>
-      a.fullName.toLowerCase().includes(t) || a.documentNumber?.toLowerCase().includes(t)
-    );
+    return assistants.filter(a => a.fullName.toLowerCase().includes(t) || a.documentNumber?.toLowerCase().includes(t));
   }, [assistants, q]);
+
+  function toast(message: string) {
+    let s = 2;
+    const div = document.createElement('div');
+    div.className =
+      'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg opacity-0 transition-opacity z-50';
+    div.textContent = `${message} Cerrando en ${s}s`;
+    document.body.appendChild(div);
+    setTimeout(() => div.classList.add('opacity-100'), 10);
+    const t = setInterval(() => {
+      s -= 1;
+      div.textContent = `${message} Cerrando en ${s}s`;
+      if (s <= 0) { clearInterval(t); div.classList.remove('opacity-100'); setTimeout(() => div.remove(), 300); }
+    }, 1000);
+  }
 
   return (
     <div className="relative z-10 px-4 py-6">
+      {/* Botón regresar (arriba izquierda) */}
+      <div className="absolute left-4 top-4">
+        <button
+          onClick={() => router.push('/')}
+          className="inline-flex items-center gap-2 rounded-lg bg-white/90 hover:bg-white px-3 py-1.5 text-sm text-gray-800 shadow"
+        >
+          <span className="text-lg">←</span> Regresar
+        </button>
+      </div>
+
+      {/* Título y filtros */}
       <div className="space-y-3">
         <h1 className="text-3xl font-semibold text-white text-center drop-shadow">Asistencias</h1>
+
         <div className="flex flex-wrap items-center justify-center gap-3">
           <input
             type="search"
@@ -322,6 +345,7 @@ export default function AssistancePage() {
             onChange={(e) => setQ(e.target.value)}
             className="w-72 bg-white text-gray-800 border border-gray-300 rounded px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+
           <div className="flex items-center gap-2">
             <span className="text-sm text-white/80">Mes:</span>
             <input
@@ -331,16 +355,35 @@ export default function AssistancePage() {
               className="bg-white text-gray-800 border border-gray-300 rounded px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <button
-            onClick={() => setMode(mode === 'table' ? 'form' : 'table')}
-            className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {mode === 'table' ? 'Agregar asistente' : 'Volver a la tabla'}
-          </button>
+
+          {mode === 'table' ? (
+            <>
+              <button
+                onClick={() => setMode('add')}
+                className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Agregar asistente
+              </button>
+              <button
+                onClick={() => setMode('delete')}
+                className="px-3 py-2 rounded bg-rose-600 text-white hover:bg-rose-700"
+              >
+                Eliminar asistente
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setMode('table')}
+              className="px-3 py-2 rounded bg-slate-600 text-white hover:bg-slate-700"
+            >
+              Volver a la tabla
+            </button>
+          )}
         </div>
       </div>
 
-      {mode === 'form' ? (
+      {/* Formularios */}
+      {mode === 'add' && (
         <div className="mt-6 flex justify-center">
           <form onSubmit={handleCreateAssistant} className="w-full max-w-md space-y-4 bg-white/95 p-6 rounded-xl shadow-xl text-gray-900">
             <div>
@@ -359,7 +402,37 @@ export default function AssistancePage() {
             </button>
           </form>
         </div>
-      ) : (
+      )}
+
+      {mode === 'delete' && (
+        <div className="mt-6 flex justify-center">
+          <form onSubmit={handleDeleteAssistant} className="w-full max-w-md space-y-4 bg-white/95 p-6 rounded-xl shadow-xl text-gray-900">
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-1">Selecciona asistente a eliminar</label>
+              <select
+                value={assistantToDelete}
+                onChange={(e) => setAssistantToDelete(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                required
+              >
+                <option value="" disabled>— Elige un asistente —</option>
+                {assistants.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.fullName} — {a.documentNumber}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="submit" disabled={!assistantToDelete}
+                    className="block mx-auto px-5 py-2.5 rounded-lg bg-rose-600 text-white font-medium hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-60">
+              Eliminar
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Tabla */}
+      {mode === 'table' && (
         <div ref={cardRef} className="bg-white rounded-xl shadow-xl overflow-hidden relative z-10 mt-6">
           <div className="overflow-x-auto">
             <div className="overflow-y-auto" style={{ height: tableHeight }}>
@@ -382,6 +455,7 @@ export default function AssistancePage() {
                     <th className="px-2 py-2 text-center">TARDANZA</th>
                     <th className="px-2 py-2 text-center">JUSTIFICACIÓN</th>
                   </tr>
+
                   <tr className="bg-gray-50 text-gray-700 sticky top-0 z-10">
                     <th className="px-2 py-1 sticky left-0 bg-gray-50 z-10" style={{ width: DOC_COL_W, minWidth: DOC_COL_W }}></th>
                     <th className="px-2 py-1 sticky bg-gray-50 z-10" style={{ left: DOC_COL_W, width: NAME_COL_W, minWidth: NAME_COL_W }}></th>
@@ -397,6 +471,7 @@ export default function AssistancePage() {
                     <th className="px-2 py-1"></th><th className="px-2 py-1"></th><th className="px-2 py-1"></th><th className="px-2 py-1"></th>
                   </tr>
                 </thead>
+
                 <tbody className="align-middle">
                   {loading && (
                     <tr><td colSpan={meta.total + 6} className="text-center py-6 text-gray-500">Cargando…</td></tr>
@@ -420,7 +495,6 @@ export default function AssistancePage() {
                             s === 'J' ? 'bg-blue-500 text-white' :
                             weekendLocked ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700';
                           const label = s === 'P' ? 'P' : s === 'A' ? 'A' : s === 'T' ? 'T' : s === 'J' ? 'J' : '—';
-
                           const noteText = doc.notes?.[d.iso];
                           const baseTitle = d.isWeekend
                             ? (weekendLocked ? 'Fin de semana (bloqueado)' : 'Fin de semana (editable)')
@@ -435,7 +509,8 @@ export default function AssistancePage() {
                                   className={`w-7 h-7 rounded text-xs font-bold ${color}`}
                                   onClick={() => handleCellClick(a.id, d.iso, d.isWeekend)}
                                   onContextMenu={(e) => openNoteEditor(e, a.id, d.iso)}
-                                  title={fullTitle} aria-label={fullTitle}
+                                  title={fullTitle}
+                                  aria-label={fullTitle}
                                 >
                                   {label}
                                 </button>
@@ -483,10 +558,7 @@ export default function AssistancePage() {
           <div className="mt-2 flex items-center justify-between">
             <button
               className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
-              onClick={async () => {
-                await saveNote(noteEditor.assistantId, noteEditor.iso, noteEditor.value.trim());
-                setNoteEditor(null);
-              }}
+              onClick={async () => { await saveNote(noteEditor.assistantId, noteEditor.iso, noteEditor.value.trim()); setNoteEditor(null); }}
             >
               Guardar
             </button>
