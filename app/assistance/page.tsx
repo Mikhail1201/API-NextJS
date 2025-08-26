@@ -285,12 +285,15 @@ export default function AssistancePage() {
 
   // Abre el editor con la NOTA ACTUAL precargada
   function openNoteEditor(e: React.MouseEvent, aid: string, iso: string) {
-    e.preventDefault(); // evita el menú del navegador
-    const current =
-      (assistMap[aid]?.notes && typeof assistMap[aid].notes![iso] === 'string')
-        ? String(assistMap[aid].notes![iso])
-        : '';
-    setNoteEditor({ assistantId: aid, iso, x: e.clientX, y: e.clientY, value: current });
+    e.preventDefault();
+    const current = assistMap[aid]?.notes?.[iso];
+    setNoteEditor({
+      assistantId: aid,
+      iso,
+      x: e.clientX,
+      y: e.clientY,
+      value: typeof current === 'string' ? current : '',
+    });
   }
 
   // Sincroniza el valor mostrado si el mapa cambia después de abrir el popover
