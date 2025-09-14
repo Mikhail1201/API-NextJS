@@ -361,7 +361,7 @@ export default function AssistancePage() {
                             type="month"
                             value={month}
                             onChange={(e) => setMonth(e.target.value)}
-                            className="cursor-pointer bg-white text-gray-800 border border-gray-300 rounded px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="bg-white text-gray-800 border border-gray-300 rounded px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
 

@@ -7,6 +7,7 @@ import {
   FaTrash,
   FaUserEdit,
   FaUserMinus,
+  FaClipboardCheck,
 } from "react-icons/fa";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "@/app/firebase/config";
@@ -33,6 +34,7 @@ export default function Homepage() {
   const [user, loading] = useAuthState(auth);
   const [showBottomButtons, setShowBottomButtons] = useState(false);
   const [roleChecked, setRoleChecked] = useState(false);
+  const [userRole, setUserRole] = useState<string>("");
 
   const router = useRouter();
 
@@ -49,6 +51,7 @@ export default function Homepage() {
           const db = getFirestore();
           const userDoc = await getDoc(doc(db, "users", user.uid));
           const data = userDoc.exists() ? userDoc.data() : {};
+          setUserRole(data.role || "");
           if (data.role === "admin" || data.role === "superadmin") {
             setShowBottomButtons(true);
           } else {
@@ -81,6 +84,7 @@ export default function Homepage() {
   const handleCreateReport = () => router.push("/createReport");
   const handleGoToReports = () => router.push("/reports");
   const handleDeleteReport = () => router.push("/deleteReport");
+  const handleAssistance = () => router.push("/assistance");
 
   // Definiciones con colores INVERTIDOS (bg = color del botón, icon/label = blanco u oscuro según contraste)
   const topButtons: ButtonDef[] = [
@@ -102,25 +106,29 @@ export default function Homepage() {
       labelColor: "text-[#1f2937]",
       onClick: handleCreateReport,
     },
-    {
-      icon: <FaTrash />,
-      label: "Eliminar",
-      bg: "bg-[#e74c3c]",
-      bgHover: "hover:bg-[#c0392b]",
-      iconColor: "text-[#1f2937]",
-      labelColor: "text-[#1f2937]",
-      onClick: handleDeleteReport,
-    },
+    ...(userRole === "admin" || userRole === "superadmin"
+      ? [
+          {
+            icon: <FaTrash />,
+            label: "Eliminar",
+            bg: "bg-[#e74c3c]",
+            bgHover: "hover:bg-[#c0392b]",
+            iconColor: "text-[#1f2937]",
+            labelColor: "text-[#1f2937]",
+            onClick: handleDeleteReport,
+          },
+        ]
+      : []),
   ];
 
+  // Definiciones de botones
   const bottomButtons: ButtonDef[] = [
     {
       icon: <FaUserEdit />,
       label: "Añadir/Actualizar Usuario",
       bg: "bg-[#f1c40f]",
       bgHover: "hover:bg-[#f39c12]",
-      // Amarillo con texto oscuro para accesibilidad
-      iconColor: "text-[#1f2937]", // gray-800
+      iconColor: "text-[#1f2937]",
       labelColor: "text-[#1f2937]",
       onClick: handleAddUpdateUser,
     },
@@ -133,6 +141,20 @@ export default function Homepage() {
       labelColor: "text-[#1f2937]",
       onClick: handleDeleteUser,
     },
+    // Solo para superadmin
+    ...(userRole === "superadmin"
+      ? [
+          {
+            icon: <FaClipboardCheck />,
+            label: "Asistencia",
+            bg: "bg-[#e67e22]",
+            bgHover: "hover:bg-[#d35400]",
+            iconColor: "text-[#1f2937]",
+            labelColor: "text-[#1f2937]",
+            onClick: handleAssistance,
+          },
+        ]
+      : []),
   ];
 
   const allButtons: ButtonDef[] = [...topButtons, ...bottomButtons];
@@ -211,11 +233,26 @@ export default function Homepage() {
 
         {/* Desktop */}
         <div className="hidden sm:block">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full mb-4">
-            {topButtons.map((btn, i) => (
-              <Card key={i} {...btn} tall />
-            ))}
-          </div>
+          {/* Para admin/superadmin: grid normal */}
+          {(userRole === "admin" || userRole === "superadmin") && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full mb-4">
+              {topButtons.map((btn, i) => (
+                <Card key={i} {...btn} tall />
+              ))}
+            </div>
+          )}
+
+          {/* Para empleados: layout como botones de abajo */}
+          {userRole === "employee" && (
+            <div className="flex gap-4 w-full mb-4">
+              {topButtons.map((btn, i) => (
+                <div key={i} className="flex-1">
+                  <Card {...btn} tall />
+                </div>
+              ))}
+            </div>
+          )}
+
           {showBottomButtons && (
             <div className="flex gap-4 w-full">
               {bottomButtons.map((btn, i) => (
