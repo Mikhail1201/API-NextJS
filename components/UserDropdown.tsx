@@ -108,6 +108,19 @@ export default function UserDropdown() {
             </div>
           )}
 
+          {/* Template - solo superadmin */}
+          {userRole === 'superadmin' && (
+            <div
+              onClick={() => {
+                setDropdownOpen(false);
+                router.push('/template');
+              }}
+              className="flex items-center px-4 py-3 text-sm text-gray-800 hover:bg-blue-50 hover:text-blue-600 cursor-pointer border-b border-gray-100"
+            >
+              <span className="mr-2">📄</span> Plantilla
+            </div>
+          )}
+
           {/* Salir */}
           <div
             onClick={async () => {
