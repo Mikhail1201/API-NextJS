@@ -1,11 +1,14 @@
 // app/import/page.tsx
 'use client';
 
+import { notFound } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import * as XLSX from 'xlsx';
+import { doc, getDoc, getFirestore } from 'firebase/firestore';
+
 
 type ColumnKey =
   | 'request'
@@ -168,6 +171,8 @@ export default function ImportPage() {
   const [posList, setPosList] = useState<string[]>([]);
   const [status, setStatus] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
+  const db = getFirestore();
 
   // preview POS nuevos (si usas el endpoint /pos-preview)
   const [newPOSCount, setNewPOSCount] = useState<number>(0);
@@ -179,9 +184,27 @@ export default function ImportPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [loading, user, router]);
+ useEffect(() => {
+  if (!loading) {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const checkRole = async () => {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      const data = snap.exists() ? (snap.data() as { role?: string }) : {};
+      if (data.role !== 'superadmin') {
+        notFound();
+        return;
+      }
+      setRole('superadmin');
+    };
+
+    checkRole();
+  }
+}, [loading, user, router, db]);
+
 
   const canImport = useMemo(() => rows.length > 0, [rows.length]);
 
@@ -309,7 +332,7 @@ export default function ImportPage() {
     }
   };
 
-  if (loading || !user) return null;
+  if (loading || !user || role !== 'superadmin') return null;
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center px-4 overflow-hidden">
