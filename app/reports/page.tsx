@@ -751,14 +751,14 @@ export default function ReportsPage() {
         <div className="flex-grow overflow-auto">
           <div
             ref={hScrollRef}
-            className="overflow-x-auto scrollbar-hide cursor-grab"
+            className="overflow-x-auto cursor-grab"
             style={{
               WebkitOverflowScrolling: 'touch',
               scrollSnapType: 'x mandatory',
               overscrollBehaviorX: 'contain',
-              overscrollBehaviorY: 'none',
-              touchAction: 'pan-x',
-              overflowY: 'hidden',
+              overscrollBehaviorY: 'auto',
+              touchAction: 'auto',
+              overflowY: 'auto',
             }}
             // ➊ Primero, capturamos el wheel y, si el target está en una celda scrollable,
             //    hacemos el desplazamiento en pasos de UNA LÍNEA y frenamos la propagación.
@@ -779,13 +779,6 @@ export default function ReportsPage() {
                 return;
               }
             }}
-            // ➋ Si NO venía de una celda con scroll vertical, seguimos con el comportamiento
-            //    original: convertir la rueda vertical a scroll horizontal de la tabla.
-            onWheel={(e) => {
-              if (e.deltaY !== 0) {
-                e.currentTarget.scrollLeft += e.deltaY; // sin preventDefault
-              }
-            }}
           >
             <table className="min-w-[1400px] table-auto border-collapse text-sm text-gray-800">
               <thead className="bg-gray-100 text-gray-700">
@@ -804,19 +797,7 @@ export default function ReportsPage() {
                     request: report.request || '-',
                     number: report.number || '-',
                     reportdate: formatReportDate(report.reportdate),
-                    description: (
-                      <div
-                        className="h-12 overflow-y-auto overflow-x-hidden px-2 py-1 leading-snug text-left"
-                        role="region"
-                        aria-label="Contenido de la celda"
-                        tabIndex={0}
-                      >
-                        <div className="whitespace-pre-wrap break-words">
-                          {report.description || '-'}
-                        </div>
-                      </div>
-                    ),
-
+                    description: report.description || '-'   ,
                     pointofsell: report.pointofsell || '-',
                     quotation: <LinkCell value={report.quotation} />,
                     deliverycertificate: report.deliverycertificate || '-',
