@@ -604,7 +604,7 @@ export default function ReportsPage() {
 
     const syncSpacer = () => {
       try {
-        spacer.style.height = `${main.scrollHeight}px`;
+        spacer.style.width = `${main.scrollWidth}px`;
       } catch { }
     };
 
@@ -612,7 +612,7 @@ export default function ReportsPage() {
       if (isSyncingScrollRef.current) return;
       isSyncingScrollRef.current = true;
       try {
-        w.scrollTop = main.scrollTop;
+        w.scrollLeft = main.scrollLeft;
       } finally {
         requestAnimationFrame(() => { isSyncingScrollRef.current = false; });
       }
@@ -622,7 +622,7 @@ export default function ReportsPage() {
       if (isSyncingScrollRef.current) return;
       isSyncingScrollRef.current = true;
       try {
-        main.scrollTop = w.scrollTop;
+        main.scrollLeft = w.scrollLeft;
       } finally {
         requestAnimationFrame(() => { isSyncingScrollRef.current = false; });
       }
@@ -801,7 +801,7 @@ export default function ReportsPage() {
 
       {/* Tabla */}
       <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[70vh] flex flex-col justify-between">
-        <div className="flex-grow overflow-auto" style={{ position: 'relative' }}>
+        <div className="flex-grow overflow-auto" style={{ position: 'relative', paddingBottom: 18 }}>
           <div
             ref={hScrollRef}
             className="overflow-x-auto cursor-grab"
@@ -907,22 +907,22 @@ export default function ReportsPage() {
             </table>
           </div>
 
-          {/* Vertical scrollbar overlay (fixed, synced with table scroll) */}
+          {/* Horizontal scrollbar overlay (fixed, synced with table scroll) */}
           <div
             ref={wScrollRef}
             aria-hidden="true"
             style={{
               position: 'absolute',
-              top: 0,
+              left: 0,
               right: 0,
-              height: '100%',
-              width: 16,
-              overflowY: 'scroll',
+              bottom: 0,
+              height: 18,
+              overflowX: 'scroll',
               zIndex: 30,
               pointerEvents: 'auto',
             }}
           >
-            <div ref={wSpacerRef} style={{ width: 1, height: 1 }} />
+            <div ref={wSpacerRef} style={{ height: 1, width: 1 }} />
           </div>
         </div>
 
