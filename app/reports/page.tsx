@@ -776,19 +776,7 @@ export default function ReportsPage() {
                     request: report.request || '-',
                     number: report.number || '-',
                     reportdate: formatReportDate(report.reportdate),
-                    description: (
-                      <div
-                        className="h-12 overflow-y-auto overflow-x-hidden px-2 py-1 leading-snug text-left"
-                        role="region"
-                        aria-label="Contenido de la celda"
-                        tabIndex={0}
-                      >
-                        <div className="whitespace-pre-wrap break-words">
-                          {report.description || '-'}
-                        </div>
-                      </div>
-                    ),
-
+                    description: report.description || '-'   ,
                     pointofsell: report.pointofsell || '-',
                     quotation: <LinkCell value={report.quotation} />,
                     deliverycertificate: report.deliverycertificate || '-',
@@ -856,19 +844,6 @@ export default function ReportsPage() {
             className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
           >
             Primera
-          </button>
-
-          <button
-            disabled={currentPage === 1 || loadingPage}
-            onClick={async () => {
-              const prev = currentPage - 1;
-              if (prev < 1) return;
-              await loadPage(prev);
-              setCurrentPage(prev);
-            }}
-            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
-          >
-            Anterior
           </button>
 
           {/* Nearby page buttons */}
