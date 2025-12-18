@@ -369,15 +369,41 @@ export default function ReportsPage() {
         // si falla, seguimos con defaults/local
       }
 
-      // Luego: obtiene el conteo de reports según filtros aplicables y salta a la última página
+      // Luego: obtiene el conteo de reports según filtros aplicables y carga la primera página
       try {
         const countClauses: QueryConstraint[] = [];
+        // pointofsell/state exact match
         if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
           countClauses.push(where('pointofsell', '==', filterValue));
         }
         if (filterField === 'state' && filterValue && filterValue !== 'all') {
           countClauses.push(where('state', '==', filterValue));
         }
+
+        // If there's a textQuery for the selected field, try to apply server-side filters
+        if (filterField && textQuery && textQuery.trim()) {
+          const tq = textQuery.trim();
+          if (filterField === 'reportdate') {
+            // try parse YYYY-MM-DD or DD/MM/YYYY
+            let d: Date | null = null;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(tq)) d = new Date(tq);
+            else if (/^\d{2}\/\d{2}\/\d{4}$/.test(tq)) {
+              const [dd, mm, yyyy] = tq.split('/');
+              d = new Date(`${yyyy}-${mm}-${dd}`);
+            }
+            if (d && !isNaN(d.getTime())) {
+              const start = d;
+              const end = new Date(d.getTime() + 24 * 60 * 60 * 1000 - 1);
+              countClauses.push(where('reportdate', '>=', start));
+              countClauses.push(where('reportdate', '<=', end));
+            }
+          } else if (filterField !== 'pointofsell' && filterField !== 'state') {
+            // prefix-range match for other string fields
+            countClauses.push(where(filterField, '>=', tq));
+            countClauses.push(where(filterField, '<=', tq + '\\uf8ff'));
+          }
+        }
+
         let countQ = query(collection(db, 'reports'));
         for (const c of countClauses) countQ = query(countQ, c);
         const getCount = getCountFromServer as unknown as (q: unknown) => Promise<{ data: () => { count: number } }>;
@@ -387,10 +413,9 @@ export default function ReportsPage() {
         const pages = Math.max(1, Math.ceil(total / reportsPerPage));
         setTotalPages(pages);
 
-        // Cargar la última página por defecto (como antes)
-        const initial = pages;
-        setCurrentPage(initial);
-        await loadPage(initial);
+        // Cargar la primera página por defecto
+        setCurrentPage(1);
+        await loadPage(1);
       } catch {
         // Si getCountFromServer no está disponible o falla, caer al comportamiento por defecto
         await loadPage(1);
@@ -488,29 +513,7 @@ export default function ReportsPage() {
     if (!filterField && textQuery) setTextQuery('');
   }, [filterField, textQuery]);
 
-  // Construye el string indexable según campo (fecha soporta varios formatos)
-  function getSearchString(r: Report, field: FilterField): string {
-    if (field === 'reportdate') {
-      const val = r.reportdate;
-      let iso = '';
-      let es = '';
-      if (typeof val === 'string') {
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) {
-          iso = d.toISOString().slice(0, 10);
-          es = d.toLocaleDateString('es-CO');
-        } else {
-          iso = val;
-        }
-      } else if (val && typeof val === 'object' && 'seconds' in val) {
-        const d = new Date(val.seconds * 1000);
-        iso = d.toISOString().slice(0, 10);
-        es = d.toLocaleDateString('es-CO');
-      }
-      return `${iso} ${es}`.trim().toLowerCase();
-    }
-    return String(r[field] ?? '').toLowerCase();
-  }
+  // (Search is performed server-side when possible; client-side helper removed)
 
   // Detecta si el evento proviene de un nodo con scroll vertical disponible
   // ¿Tiene scroll vertical real?
@@ -1416,13 +1419,37 @@ export default function ReportsPage() {
 
     setLoadingPage(true);
     try {
-      // Construye cláusulas where según filtros aplicables (soportamos pointofsell y state server-side)
+      // Construye cláusulas where según filtros aplicables (intentamos aplicar filtros server-side)
       const clauses: QueryConstraint[] = [];
+      // exact matches for select filters
       if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
         clauses.push(where('pointofsell', '==', filterValue));
       }
       if (filterField === 'state' && filterValue && filterValue !== 'all') {
         clauses.push(where('state', '==', filterValue));
+      }
+
+      // If there's a textQuery, try to translate it to server-side clauses
+      if (filterField && textQuery && textQuery.trim()) {
+        const tq = textQuery.trim();
+        if (filterField === 'reportdate') {
+          let d: Date | null = null;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(tq)) d = new Date(tq);
+          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(tq)) {
+            const [dd, mm, yyyy] = tq.split('/');
+            d = new Date(`${yyyy}-${mm}-${dd}`);
+          }
+          if (d && !isNaN(d.getTime())) {
+            const start = d;
+            const end = new Date(d.getTime() + 24 * 60 * 60 * 1000 - 1);
+            clauses.push(where('reportdate', '>=', start));
+            clauses.push(where('reportdate', '<=', end));
+          }
+        } else if (filterField !== 'pointofsell' && filterField !== 'state') {
+          // prefix-range match for other string fields (requires appropriate indexing)
+          clauses.push(where(filterField, '>=', tq));
+          clauses.push(where(filterField, '<=', tq + '\\uf8ff'));
+        }
       }
 
       // Si necesitamos avanzar a una página mayor y no tenemos cursor, cargamos de forma secuencial
@@ -1433,7 +1460,10 @@ export default function ReportsPage() {
             curCursor = cursorsRef.current.get(p) || curCursor;
             continue;
           }
-          let q = query(collection(db, 'reports'), orderBy('reportdate', sortOrder), limitFn(reportsPerPage));
+          // Determine ordering field: if filtering by a field we applied server-side,
+          // order by that field to page consistently. Fallback to reportdate.
+            const primaryOrder = filterField && textQuery && textQuery.trim() ? filterField : 'reportdate';
+          let q = query(collection(db, 'reports'), orderBy(primaryOrder as unknown as string, sortOrder), limitFn(reportsPerPage));
           for (const c of clauses) q = query(q, c);
           if (curCursor) q = query(q, startAfter(curCursor));
           const snap = await getDocs(q);
@@ -1452,18 +1482,14 @@ export default function ReportsPage() {
       }
 
       // Ahora construimos la query para la página solicitada
-      let qFinal = query(collection(db, 'reports'), orderBy('reportdate', sortOrder), limitFn(reportsPerPage));
+      const primaryOrder = filterField && textQuery && textQuery.trim() ? filterField : 'reportdate';
+      let qFinal = query(collection(db, 'reports'), orderBy(primaryOrder as unknown as string, sortOrder), limitFn(reportsPerPage));
       for (const c of clauses) qFinal = query(qFinal, c);
       const prevCursor = cursorsRef.current.get(page - 1) || null;
       if (prevCursor) qFinal = query(qFinal, startAfter(prevCursor));
       const snap = await getDocs(qFinal);
-      let list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
 
-      // Aplicar filtro de texto (cliente) si aplica
-      if (filterField && textQuery && textQuery.trim()) {
-        const qLower = textQuery.trim().toLowerCase();
-        list = list.filter((r) => getSearchString(r, filterField).includes(qLower));
-      }
 
       pageCacheRef.current.set(page, list);
       const lastDoc = snap.docs[snap.docs.length - 1] || null;
