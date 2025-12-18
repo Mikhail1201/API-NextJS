@@ -9,7 +9,19 @@ import {
   type CSSProperties,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import {
+  getFirestore,
+  collection,
+  getDocs,
+  doc,
+  getDoc,
+  query,
+  where,
+  orderBy,
+  limit as limitFn,
+  startAfter,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { signOut } from 'firebase/auth';
@@ -178,6 +190,14 @@ export default function ReportsPage() {
   const reportsPerPage = 5;
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Cache de páginas y cursores para paginación por cursor
+  const pageCacheRef = useRef<Map<number, Report[]>>(new Map());
+  const cursorsRef = useRef<Map<number, QueryDocumentSnapshot | null>>(new Map());
+  const [currentPageReports, setCurrentPageReports] = useState<Report[]>([]);
+  const [loadingPage, setLoadingPage] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [cacheVersion, setCacheVersion] = useState(0);
+
   const [filterField, setFilterField] = useState<FilterField | ''>('');
   const [filterValue, setFilterValue] = useState<string>('');
 
@@ -316,16 +336,14 @@ export default function ReportsPage() {
       const userRole: string | null = data?.role ?? null;
 
       if (!userRole) {
-        await signOut(auth);
+        if (auth) await signOut(auth);
         router.push('/login');
         return;
       }
       setRoleChecked(true);
 
-      // Trae reportes
-      const reportsSnapshot = await getDocs(collection(db, 'reports'));
-      const reportsList = reportsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
-      setReports(reportsList);
+      // Carga la primera página (la paginación ahora se hace por página)
+      await loadPage(1);
 
       // Trae preferencias del usuario desde la API
       try {
@@ -366,16 +384,36 @@ export default function ReportsPage() {
     };
 
     if (!loading && user) run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading, db, router]);
+
+  // Limpia cache cuando cambian filtros/orden
+  useEffect(() => {
+    // reset cache and load first page
+    pageCacheRef.current.clear();
+    cursorsRef.current.clear();
+    setCacheVersion((v) => v + 1);
+    setHasMore(true);
+    setCurrentPage(1);
+    setCurrentPageReports([]);
+    void loadPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterField, filterValue, textQuery, sortOrder]);
 
   /* ---------- únicos ---------- */
   const uniquePoints = useMemo(
-    () => Array.from(new Set(reports.map((r) => r.pointofsell).filter(Boolean))) as string[],
-    [reports]
+    () => {
+      const all = Array.from(pageCacheRef.current.values()).flat();
+      return Array.from(new Set(all.map((r) => r.pointofsell).filter(Boolean))) as string[];
+    },
+    [cacheVersion]
   );
   const uniqueStates = useMemo(
-    () => Array.from(new Set(reports.map((r) => r.state).filter(Boolean))) as string[],
-    [reports]
+    () => {
+      const all = Array.from(pageCacheRef.current.values()).flat();
+      return Array.from(new Set(all.map((r) => r.state).filter(Boolean))) as string[];
+    },
+    [cacheVersion]
   );
 
   /* ---------- Derivar estilos ---------- */
@@ -508,87 +546,8 @@ export default function ReportsPage() {
     return sortOrder === 'desc' ? 'Z → A' : 'A → Z';
   }, [sortKey, sortOrder]);
 
-  const filteredReports = useMemo(() => {
-    let filtered = reports;
-
-    if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
-      filtered = filtered.filter((r) => r.pointofsell === filterValue);
-    }
-    if (filterField === 'state' && filterValue && filterValue !== 'all') {
-      filtered = filtered.filter((r) => r.state === filterValue);
-    }
-
-    // Filtro de texto universal por campo (incluye fechas)
-    if (filterField && textQuery.trim()) {
-      const q = textQuery.trim().toLowerCase();
-      filtered = filtered.filter((r) => getSearchString(r, filterField).includes(q));
-    }
-
-    const asc = sortOrder === 'asc';
-
-    const cmpDate = (a: Report, b: Report) => {
-      const av = getDateValue(a.reportdate);
-      const bv = getDateValue(b.reportdate);
-      const aMiss = isNaN(av);
-      const bMiss = isNaN(bv);
-      if (aMiss && bMiss) return 0;
-      if (aMiss) return 1;
-      if (bMiss) return -1;
-      return asc ? av - bv : bv - av;
-    };
-
-    const cmpNumber = (a: Report, b: Report, key: 'request' | 'number' | 'bill') => {
-      const av = coerceNumber(String(a[key] ?? ''));
-      const bv = coerceNumber(String(b[key] ?? ''));
-      const aMiss = isNaN(av);
-      const bMiss = isNaN(bv);
-      if (aMiss && bMiss) return 0;
-      if (aMiss) return 1;
-      if (bMiss) return -1;
-      return asc ? av - bv : bv - av;
-    };
-
-    const cmpString = (
-      a: Report,
-      b: Report,
-      key: Exclude<FilterField, 'reportdate' | 'request' | 'number'>
-    ) => {
-      const av = String(a[key] ?? '').toLowerCase();
-      const bv = String(b[key] ?? '').toLowerCase();
-      const aMiss = av === '';
-      const bMiss = bv === '';
-      if (aMiss && bMiss) return 0;
-      if (aMiss) return 1;
-      if (bMiss) return -1;
-      const base = av.localeCompare(bv, 'es', { sensitivity: 'base' });
-      return asc ? base : -base;
-    };
-
-    const sorted = filtered.slice().sort((a, b) => {
-      if (isDateKey(sortKey)) return cmpDate(a, b);
-      if (isNumericKey(sortKey)) return cmpNumber(a, b, sortKey as 'request' | 'number' | 'bill');
-      return cmpString(a, b, sortKey as Exclude<FilterField, 'reportdate' | 'request' | 'number'>);
-    });
-
-    return sorted;
-  }, [
-    reports,
-    filterField,
-    filterValue,
-    textQuery,
-    sortKey,
-    sortOrder,
-  ]);
-
-  const totalPages = Math.ceil(filteredReports.length / reportsPerPage);
-  const paginatedReports = useMemo(
-    () => filteredReports.slice((currentPage - 1) * reportsPerPage, currentPage * reportsPerPage),
-    [filteredReports, currentPage, reportsPerPage]
-  );
-
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(1);
-  }, [filteredReports, totalPages, currentPage]);
+  // Página actual: los reportes vienen de la cache / consulta por página
+  const totalPages = undefined;
 
   // Columnas realmente pintadas según preferencias
   const orderedCols = useMemo(() => {
@@ -747,7 +706,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Tabla */}
-      <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[70vh] flex flex-col justify-between">
+      <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 min-h-[70vh] max-h-[80vh] flex flex-col justify-between">
         <div className="flex-grow overflow-auto">
           <div
             ref={hScrollRef}
@@ -797,7 +756,7 @@ export default function ReportsPage() {
               </thead>
 
               <tbody>
-                {paginatedReports.map((report) => {
+                  {currentPageReports.map((report) => {
                   const derived = styleForStateValue(report.state);
 
                   const rowMap: Record<ColKey, ReactNode> = {
@@ -872,55 +831,37 @@ export default function ReportsPage() {
             </table>
           </div>
         </div>
+        <div className="flex justify-center mt-4 gap-2">
+          <button
+            disabled={currentPage === 1}
+            onClick={async () => {
+              const prev = currentPage - 1;
+              if (pageCacheRef.current.has(prev)) {
+                setCurrentPage(prev);
+                setCurrentPageReports(pageCacheRef.current.get(prev) || []);
+              }
+            }}
+            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
+          >
+            Anterior
+          </button>
 
-        {totalPages > 1 && (
-          <div className="flex justify-center mt-4 gap-1 flex-wrap">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-              className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
-            >
-              Anterior
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((page) => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 2)
-              .map((page, idx, arr) => {
-                const prev = arr[idx - 1];
-                const showEllipsis = prev && page - prev > 1;
-                return (
-                  <span key={page} className="flex items-center">
-                    {showEllipsis && <span className="px-1">...</span>}
-                    <button
-                      onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded cursor-pointer text-black ${currentPage === page
-                        ? 'bg-blue-600 text-white font-bold'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                    >
-                      {page}
-                    </button>
-                  </span>
-                );
-              })}
-
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-              className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
-            >
-              Siguiente
-            </button>
-
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(totalPages)}
-              className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
-            >
-              Última
-            </button>
+          <div className="px-3 py-1 rounded bg-white text-black">
+            Página {currentPage}
           </div>
-        )}
+
+          <button
+            disabled={!hasMore}
+            onClick={async () => {
+              const next = currentPage + 1;
+              await loadPage(next);
+              setCurrentPage(next);
+            }}
+            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
+          >
+            Siguiente
+          </button>
+        </div>
       </div>
 
       {/* Modal Editar */}
@@ -1436,6 +1377,72 @@ export default function ReportsPage() {
       });
     } catch {
       // no bloquear UI si falla
+    }
+  }
+
+  // Carga una página desde Firestore usando cursores y cache
+  async function loadPage(page: number) {
+    if (page <= 0) return;
+    // Si ya está en cache, úsala
+    if (pageCacheRef.current.has(page)) {
+      setCurrentPageReports(pageCacheRef.current.get(page) || []);
+      return;
+    }
+
+    setLoadingPage(true);
+    try {
+      // Construye cláusulas where según filtros aplicables (soportamos pointofsell y state server-side)
+      const clauses: any[] = [];
+      if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
+        clauses.push(where('pointofsell', '==', filterValue));
+      }
+      if (filterField === 'state' && filterValue && filterValue !== 'all') {
+        clauses.push(where('state', '==', filterValue));
+      }
+
+      // Si necesitamos avanzar a una página mayor y no tenemos cursor, cargamos de forma secuencial
+      if (page > 1 && !cursorsRef.current.get(page - 1)) {
+        let curCursor: QueryDocumentSnapshot | null = null;
+        for (let p = 1; p < page; p++) {
+          if (pageCacheRef.current.has(p)) {
+            curCursor = cursorsRef.current.get(p) || curCursor;
+            continue;
+          }
+          let q = query(collection(db, 'reports'), orderBy('reportdate', sortOrder), limitFn(reportsPerPage));
+          for (const c of clauses) q = query(q, c);
+          if (curCursor) q = query(q, startAfter(curCursor));
+          const snap = await getDocs(q);
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
+          pageCacheRef.current.set(p, list);
+          const last = snap.docs[snap.docs.length - 1] || null;
+          cursorsRef.current.set(p, last as QueryDocumentSnapshot | null);
+          curCursor = last as QueryDocumentSnapshot | null;
+          setCacheVersion((v) => v + 1);
+          // Si menos que page size, no hay más
+          if (snap.docs.length < reportsPerPage) {
+            setHasMore(false);
+            break;
+          }
+        }
+      }
+
+      // Ahora construimos la query para la página solicitada
+      let qFinal = query(collection(db, 'reports'), orderBy('reportdate', sortOrder), limitFn(reportsPerPage));
+      for (const c of clauses) qFinal = query(qFinal, c);
+      const prevCursor = cursorsRef.current.get(page - 1) || null;
+      if (prevCursor) qFinal = query(qFinal, startAfter(prevCursor));
+      const snap = await getDocs(qFinal);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
+      pageCacheRef.current.set(page, list);
+      const lastDoc = snap.docs[snap.docs.length - 1] || null;
+      cursorsRef.current.set(page, lastDoc as QueryDocumentSnapshot | null);
+      setCurrentPageReports(list);
+      setCacheVersion((v) => v + 1);
+      setHasMore(snap.docs.length === reportsPerPage);
+    } catch (e) {
+      console.error('loadPage error', e);
+    } finally {
+      setLoadingPage(false);
     }
   }
 
