@@ -21,6 +21,7 @@ import {
   limit as limitFn,
   startAfter,
   type QueryDocumentSnapshot,
+  type QueryConstraint,
 } from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
@@ -182,7 +183,7 @@ const LOCAL_ORDER_KEY = 'reports_columnOrder_v1';
 
 export default function ReportsPage() {
   const router = useRouter();
-  const [reports, setReports] = useState<Report[]>([]);
+  
   const [user, loading] = useAuthState(auth);
   const [roleChecked, setRoleChecked] = useState(false);
 
@@ -281,21 +282,7 @@ export default function ReportsPage() {
     return '-';
   };
 
-  const getDateValue = (val: string | { seconds: number } | undefined) => {
-    if (!val) return NaN;
-    if (typeof val === 'string') {
-      const t = new Date(val).getTime();
-      return isNaN(t) ? NaN : t;
-    }
-    if (typeof val === 'object' && 'seconds' in val) return val.seconds * 1000;
-    return NaN;
-  };
-
-  const coerceNumber = (raw?: string) => {
-    if (!raw) return NaN;
-    const m = raw.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
-    return m ? Number(m[0]) : NaN;
-  };
+  
 
   // Link (quotation / asesorías)
   const extractFirstUrl = (text?: string | null): string | null => {
@@ -401,20 +388,20 @@ export default function ReportsPage() {
   }, [filterField, filterValue, textQuery, sortOrder]);
 
   /* ---------- únicos ---------- */
-  const uniquePoints = useMemo(
-    () => {
-      const all = Array.from(pageCacheRef.current.values()).flat();
-      return Array.from(new Set(all.map((r) => r.pointofsell).filter(Boolean))) as string[];
-    },
-    [cacheVersion]
-  );
-  const uniqueStates = useMemo(
-    () => {
-      const all = Array.from(pageCacheRef.current.values()).flat();
-      return Array.from(new Set(all.map((r) => r.state).filter(Boolean))) as string[];
-    },
-    [cacheVersion]
-  );
+  // Recompute unique lists when cacheVersion changes
+  const uniquePoints = useMemo(() => {
+    const _cv = cacheVersion; // used to trigger recompute when cache changes
+    void _cv;
+    const all = Array.from(pageCacheRef.current.values()).flat();
+    return Array.from(new Set(all.map((r) => r.pointofsell).filter(Boolean))) as string[];
+  }, [cacheVersion]);
+
+  const uniqueStates = useMemo(() => {
+    const _cv = cacheVersion; // used to trigger recompute when cache changes
+    void _cv;
+    const all = Array.from(pageCacheRef.current.values()).flat();
+    return Array.from(new Set(all.map((r) => r.state).filter(Boolean))) as string[];
+  }, [cacheVersion]);
 
   /* ---------- Derivar estilos ---------- */
   const derivedStylesMap = useMemo(() => {
@@ -547,7 +534,6 @@ export default function ReportsPage() {
   }, [sortKey, sortOrder]);
 
   // Página actual: los reportes vienen de la cache / consulta por página
-  const totalPages = undefined;
 
   // Columnas realmente pintadas según preferencias
   const orderedCols = useMemo(() => {
@@ -833,7 +819,7 @@ export default function ReportsPage() {
         </div>
         <div className="flex justify-center mt-4 gap-2">
           <button
-            disabled={currentPage === 1}
+            disabled={currentPage === 1 || loadingPage}
             onClick={async () => {
               const prev = currentPage - 1;
               if (pageCacheRef.current.has(prev)) {
@@ -847,11 +833,11 @@ export default function ReportsPage() {
           </button>
 
           <div className="px-3 py-1 rounded bg-white text-black">
-            Página {currentPage}
+            {loadingPage ? 'Cargando...' : `Página ${currentPage}`}
           </div>
 
           <button
-            disabled={!hasMore}
+            disabled={!hasMore || loadingPage}
             onClick={async () => {
               const next = currentPage + 1;
               await loadPage(next);
@@ -1392,7 +1378,7 @@ export default function ReportsPage() {
     setLoadingPage(true);
     try {
       // Construye cláusulas where según filtros aplicables (soportamos pointofsell y state server-side)
-      const clauses: any[] = [];
+      const clauses: QueryConstraint[] = [];
       if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
         clauses.push(where('pointofsell', '==', filterValue));
       }
@@ -1432,7 +1418,14 @@ export default function ReportsPage() {
       const prevCursor = cursorsRef.current.get(page - 1) || null;
       if (prevCursor) qFinal = query(qFinal, startAfter(prevCursor));
       const snap = await getDocs(qFinal);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
+      let list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Report));
+
+      // Aplicar filtro de texto (cliente) si aplica
+      if (filterField && textQuery && textQuery.trim()) {
+        const qLower = textQuery.trim().toLowerCase();
+        list = list.filter((r) => getSearchString(r, filterField).includes(qLower));
+      }
+
       pageCacheRef.current.set(page, list);
       const lastDoc = snap.docs[snap.docs.length - 1] || null;
       cursorsRef.current.set(page, lastDoc as QueryDocumentSnapshot | null);
