@@ -22,6 +22,7 @@ import {
   startAfter,
   type QueryDocumentSnapshot,
   type QueryConstraint,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { auth } from '@/app/firebase/config';
 import { useAuthState } from 'react-firebase-hooks/auth';
@@ -183,7 +184,7 @@ const LOCAL_ORDER_KEY = 'reports_columnOrder_v1';
 
 export default function ReportsPage() {
   const router = useRouter();
-  
+
   const [user, loading] = useAuthState(auth);
   const [roleChecked, setRoleChecked] = useState(false);
 
@@ -196,7 +197,7 @@ export default function ReportsPage() {
   const cursorsRef = useRef<Map<number, QueryDocumentSnapshot | null>>(new Map());
   const [currentPageReports, setCurrentPageReports] = useState<Report[]>([]);
   const [loadingPage, setLoadingPage] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [, setHasMore] = useState(true);
   const [cacheVersion, setCacheVersion] = useState(0);
 
   const [filterField, setFilterField] = useState<FilterField | ''>('');
@@ -252,6 +253,8 @@ export default function ReportsPage() {
   const suppressHScrollRef = useRef<boolean>(false);
 
   const db = getFirestore();
+  const [, setTotalReports] = useState<number | null>(null);
+  const [totalPages, setTotalPages] = useState<number>(1);
 
   /* ---------- Cargar orden de columnas desde localStorage al iniciar ---------- */
   useEffect(() => {
@@ -282,7 +285,7 @@ export default function ReportsPage() {
     return '-';
   };
 
-  
+
 
   // Link (quotation / asesorías)
   const extractFirstUrl = (text?: string | null): string | null => {
@@ -329,10 +332,7 @@ export default function ReportsPage() {
       }
       setRoleChecked(true);
 
-      // Carga la primera página (la paginación ahora se hace por página)
-      await loadPage(1);
-
-      // Trae preferencias del usuario desde la API
+      // Primero: trae preferencias del usuario (colores + orden) para aplicarlas antes de cargar páginas
       try {
         const idToken = await auth.currentUser?.getIdToken();
         if (idToken) {
@@ -367,6 +367,33 @@ export default function ReportsPage() {
         }
       } catch {
         // si falla, seguimos con defaults/local
+      }
+
+      // Luego: obtiene el conteo de reports según filtros aplicables y salta a la última página
+      try {
+        const countClauses: QueryConstraint[] = [];
+        if (filterField === 'pointofsell' && filterValue && filterValue !== 'all') {
+          countClauses.push(where('pointofsell', '==', filterValue));
+        }
+        if (filterField === 'state' && filterValue && filterValue !== 'all') {
+          countClauses.push(where('state', '==', filterValue));
+        }
+        let countQ = query(collection(db, 'reports'));
+        for (const c of countClauses) countQ = query(countQ, c);
+        const getCount = getCountFromServer as unknown as (q: unknown) => Promise<{ data: () => { count: number } }>;
+        const countSnap = await getCount(countQ);
+        const total = Number(countSnap.data().count || 0);
+        setTotalReports(total);
+        const pages = Math.max(1, Math.ceil(total / reportsPerPage));
+        setTotalPages(pages);
+
+        // Cargar la última página por defecto (como antes)
+        const initial = pages;
+        setCurrentPage(initial);
+        await loadPage(initial);
+      } catch {
+        // Si getCountFromServer no está disponible o falla, caer al comportamiento por defecto
+        await loadPage(1);
       }
     };
 
@@ -742,7 +769,7 @@ export default function ReportsPage() {
               </thead>
 
               <tbody>
-                  {currentPageReports.map((report) => {
+                {currentPageReports.map((report) => {
                   const derived = styleForStateValue(report.state);
 
                   const rowMap: Record<ColKey, ReactNode> = {
@@ -817,35 +844,72 @@ export default function ReportsPage() {
             </table>
           </div>
         </div>
-        <div className="flex justify-center mt-4 gap-2">
+        <div className="flex justify-center mt-4 gap-2 items-center">
+          <button
+            disabled={currentPage === 1 || loadingPage || totalPages <= 1}
+            onClick={async () => {
+              if (totalPages && totalPages > 0) {
+                await loadPage(1);
+                setCurrentPage(1);
+              }
+            }}
+            className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
+          >
+            Primera
+          </button>
+
           <button
             disabled={currentPage === 1 || loadingPage}
             onClick={async () => {
               const prev = currentPage - 1;
-              if (pageCacheRef.current.has(prev)) {
-                setCurrentPage(prev);
-                setCurrentPageReports(pageCacheRef.current.get(prev) || []);
-              }
+              if (prev < 1) return;
+              await loadPage(prev);
+              setCurrentPage(prev);
             }}
             className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
           >
             Anterior
           </button>
 
-          <div className="px-3 py-1 rounded bg-white text-black">
-            {loadingPage ? 'Cargando...' : `Página ${currentPage}`}
-          </div>
+          {/* Nearby page buttons */}
+          {currentPage - 1 >= 1 && (
+            <button
+              onClick={async () => {
+                const p = currentPage - 1;
+                await loadPage(p);
+                setCurrentPage(p);
+              }}
+              className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-black cursor-pointer"
+            >
+              {currentPage - 1}
+            </button>
+          )}
+
+          <div className="px-3 py-1 rounded bg-white text-black">{loadingPage ? 'Cargando...' : `Página ${currentPage}`}</div>
+
+          {currentPage + 1 <= totalPages && (
+            <button
+              onClick={async () => {
+                const p = currentPage + 1;
+                await loadPage(p);
+                setCurrentPage(p);
+              }}
+              className="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-black cursor-pointer"
+            >
+              {currentPage + 1}
+            </button>
+          )}
 
           <button
-            disabled={!hasMore || loadingPage}
+            disabled={currentPage === totalPages || loadingPage || totalPages <= 1}
             onClick={async () => {
-              const next = currentPage + 1;
-              await loadPage(next);
-              setCurrentPage(next);
+              if (!totalPages) return;
+              await loadPage(totalPages);
+              setCurrentPage(totalPages);
             }}
             className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-black cursor-pointer"
           >
-            Siguiente
+            Última
           </button>
         </div>
       </div>
