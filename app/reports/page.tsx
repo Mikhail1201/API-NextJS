@@ -229,6 +229,9 @@ export default function ReportsPage() {
   const organizeScrollRef = useRef<HTMLDivElement | null>(null);
   const hScrollRef = useRef<HTMLDivElement | null>(null);
   const suppressHScrollRef = useRef<boolean>(false);
+  const wScrollRef = useRef<HTMLDivElement | null>(null);
+  const wSpacerRef = useRef<HTMLDivElement | null>(null);
+  const isSyncingScrollRef = useRef(false);
 
   const db = getFirestore();
 
@@ -403,6 +406,8 @@ export default function ReportsPage() {
     }
     return derivedStylesMap[key];
   };
+
+  /* vertical scrollbar syncing effect moved below (after paginatedReports declaration) */
 
   /* ---------- Orden/filtrado ---------- */
   const sortKey: FilterField = (filterField || 'reportdate') as FilterField;
@@ -590,6 +595,54 @@ export default function ReportsPage() {
     if (currentPage > totalPages) setCurrentPage(1);
   }, [filteredReports, totalPages, currentPage]);
 
+  // Sync vertical overlay scrollbar with the table container
+  useEffect(() => {
+    const main = hScrollRef.current;
+    const w = wScrollRef.current;
+    const spacer = wSpacerRef.current;
+    if (!main || !w || !spacer) return;
+
+    const syncSpacer = () => {
+      try {
+        spacer.style.height = `${main.scrollHeight}px`;
+      } catch { }
+    };
+
+    const onMainScroll = () => {
+      if (isSyncingScrollRef.current) return;
+      isSyncingScrollRef.current = true;
+      try {
+        w.scrollTop = main.scrollTop;
+      } finally {
+        requestAnimationFrame(() => { isSyncingScrollRef.current = false; });
+      }
+    };
+
+    const onWScroll = () => {
+      if (isSyncingScrollRef.current) return;
+      isSyncingScrollRef.current = true;
+      try {
+        main.scrollTop = w.scrollTop;
+      } finally {
+        requestAnimationFrame(() => { isSyncingScrollRef.current = false; });
+      }
+    };
+
+    main.addEventListener('scroll', onMainScroll, { passive: true });
+    w.addEventListener('scroll', onWScroll, { passive: true });
+
+    const ro = new ResizeObserver(syncSpacer);
+    ro.observe(main);
+    // initial sync
+    syncSpacer();
+
+    return () => {
+      main.removeEventListener('scroll', onMainScroll);
+      w.removeEventListener('scroll', onWScroll);
+      ro.disconnect();
+    };
+  }, [paginatedReports]);
+
   // Columnas realmente pintadas según preferencias
   const orderedCols = useMemo(() => {
     const baseKeys = BASE_COLS.map(c => c.key);
@@ -748,7 +801,7 @@ export default function ReportsPage() {
 
       {/* Tabla */}
       <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[70vh] flex flex-col justify-between">
-        <div className="flex-grow overflow-auto">
+        <div className="flex-grow overflow-auto" style={{ position: 'relative' }}>
           <div
             ref={hScrollRef}
             className="overflow-x-auto cursor-grab"
@@ -758,7 +811,7 @@ export default function ReportsPage() {
               overscrollBehaviorX: 'contain',
               overscrollBehaviorY: 'auto',
               touchAction: 'auto',
-              overflowY: 'scroll',
+              overflowY: 'hidden',
               overflowX: 'scroll'
             }}
             // ➊ Primero, capturamos el wheel y, si el target está en una celda scrollable,
@@ -852,6 +905,24 @@ export default function ReportsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Vertical scrollbar overlay (fixed, synced with table scroll) */}
+          <div
+            ref={wScrollRef}
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              height: '100%',
+              width: 16,
+              overflowY: 'scroll',
+              zIndex: 30,
+              pointerEvents: 'auto',
+            }}
+          >
+            <div ref={wSpacerRef} style={{ width: 1, height: 1 }} />
           </div>
         </div>
 
