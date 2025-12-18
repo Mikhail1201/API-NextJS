@@ -175,7 +175,7 @@ export default function ReportsPage() {
   const [roleChecked, setRoleChecked] = useState(false);
 
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const reportsPerPage = 5;
+  const reportsPerPage = 10;
   const [currentPage, setCurrentPage] = useState(1);
 
   const [filterField, setFilterField] = useState<FilterField | ''>('');
@@ -758,7 +758,7 @@ export default function ReportsPage() {
               overscrollBehaviorX: 'contain',
               overscrollBehaviorY: 'auto',
               touchAction: 'auto',
-              overflowY: 'auto',
+              overflowY: 'scroll',
             }}
             // ➊ Primero, capturamos el wheel y, si el target está en una celda scrollable,
             //    hacemos el desplazamiento en pasos de UNA LÍNEA y frenamos la propagación.
