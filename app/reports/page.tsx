@@ -801,7 +801,7 @@ export default function ReportsPage() {
 
       {/* Tabla */}
       <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[70vh] flex flex-col justify-between">
-        <div className="flex-grow overflow-auto">
+        <div className="flex-grow overflow-auto scrollbar-hide">
           <div
             ref={hScrollRef}
             className="overflow-x-auto cursor-grab"
