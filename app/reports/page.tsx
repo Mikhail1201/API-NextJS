@@ -977,7 +977,7 @@ export default function ReportsPage() {
       {/* Modal Editar */}
       {showModal && selectedReport && editReport && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-lg w-[65%] max-h-[90vh] overflow-y-auto min-w-3x1 p-6">
+          <div className="bg-white rounded-lg shadow-lg w-[75%] max-h-[90vh] overflow-y-auto min-w-3x1 p-6">
             <h2 className="text-xl font-semibold mb-4 text-black">Editar Reporte</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-black">
               {/* Columna 1 */}
