@@ -1016,7 +1016,7 @@ export default function ReportsPage() {
                 <div>
                   <strong>Descripción:</strong>
                   <textarea
-                    className="w-full border rounded p-1 mt-1 h-10 resize-none align-middle"
+                    className="w-full border rounded p-1 mt-1 h-20 resize-none align-middle"
                     value={editReport.description || ''}
                     onChange={(e) => setEditReport({ ...editReport, description: e.target.value })}
                   />
@@ -1114,7 +1114,7 @@ export default function ReportsPage() {
                 <div>
                   <strong>Descripción del Servicio:</strong>
                   <textarea
-                    className="w-full border rounded p-1 mt-1 h-10 resize-none align-middle"
+                    className="w-full border rounded p-1 mt-1 h-20 resize-none align-middle"
                     value={editReport.servicedescription || ''}
                     onChange={(e) => setEditReport({ ...editReport, servicedescription: e.target.value })}
                   />
