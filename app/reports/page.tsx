@@ -801,7 +801,7 @@ export default function ReportsPage() {
 
       {/* Tabla */}
       <div className="z-10 bg-white w-full max-w-6xl rounded-xl shadow-xl p-4 mt-2 h-[70vh] flex flex-col justify-between">
-        <div className="flex-grow overflow-auto" style={{ position: 'relative', paddingBottom: 18 }}>
+        <div className="flex-grow overflow-auto">
           <div
             ref={hScrollRef}
             className="overflow-x-auto cursor-grab"
@@ -907,23 +907,20 @@ export default function ReportsPage() {
             </table>
           </div>
 
-          {/* Horizontal scrollbar overlay (fixed, synced with table scroll) */}
-          <div
-            ref={wScrollRef}
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 18,
-              overflowX: 'scroll',
-              zIndex: 30,
-              pointerEvents: 'auto',
-            }}
-          >
-            <div ref={wSpacerRef} style={{ height: 1, width: 1 }} />
-          </div>
+        </div>
+
+        {/* Horizontal scrollbar (outside the scrollable area so it stays visible) */}
+        <div
+          ref={wScrollRef}
+          aria-hidden="true"
+          style={{
+            height: 18,
+            overflowX: 'scroll',
+            width: '100%',
+            marginTop: 6,
+          }}
+        >
+          <div ref={wSpacerRef} style={{ height: 1, width: 1 }} />
         </div>
 
         {totalPages > 1 && (
