@@ -811,8 +811,9 @@ export default function ReportsPage() {
               overscrollBehaviorX: 'contain',
               overscrollBehaviorY: 'auto',
               touchAction: 'auto',
-              overflowY: 'scroll',
+              overflowY: 'hidden',
               overflowX: 'hidden'
+              //im tired of scrollbars showing when not needed
             }}
             // ➊ Primero, capturamos el wheel y, si el target está en una celda scrollable,
             //    hacemos el desplazamiento en pasos de UNA LÍNEA y frenamos la propagación.
