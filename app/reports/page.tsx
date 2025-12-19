@@ -915,7 +915,7 @@ export default function ReportsPage() {
           ref={wScrollRef}
           aria-hidden="true"
           style={{
-            height: 24,
+            height: 36,
             overflowX: 'scroll',
             width: '100%',
             marginTop: 6,
