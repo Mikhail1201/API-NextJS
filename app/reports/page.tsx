@@ -921,7 +921,7 @@ export default function ReportsPage() {
             marginTop: 6,
           }}
         >
-          <div ref={wSpacerRef} style={{ height: 1, width: 1 }} />
+          <div ref={wSpacerRef} style={{ height: 3, width: 1 }} />
         </div>
 
         {totalPages > 1 && (
